@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "PhysiqeAI",
-    "slug": "PhysiqeAI",
+    "name": "Flex Aura",
+    "slug": "flex-aura",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/mascot/flex_aura_logo_no_bg.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/mascot/flex_aura_logo_no_bg.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -17,13 +17,19 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/mascot/flex_aura_logo_no_bg.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true
     },
+    "notification": {
+      "icon": "./assets/mascot/flex_aura_logo_no_bg.png",
+      "color": "#B7FCE7",
+      "androidMode": "default",
+      "androidCollapsedTitle": "Flex Aura"
+    },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/mascot/flex_aura_logo_no_bg.png"
     }
   }
 }
