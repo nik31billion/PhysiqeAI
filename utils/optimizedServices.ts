@@ -14,12 +14,12 @@ export const getCachedUserProfile = async (userId: string): Promise<UserProfile 
   // Try to get from cache first
   const cachedProfile = dataCache.get<UserProfile>(cacheKey);
   if (cachedProfile) {
-    console.log('📦 Using cached user profile');
+    
     return cachedProfile;
   }
 
   // Fetch from API if not in cache
-  console.log('🌐 Fetching user profile from API');
+  
   const profile = await fetchUserProfile(userId);
   
   if (profile) {
@@ -37,12 +37,12 @@ export const getCachedUserPlan = async (userId: string): Promise<UserPlan | null
   // Try to get from cache first
   const cachedPlan = dataCache.get<UserPlan>(cacheKey);
   if (cachedPlan) {
-    console.log('📦 Using cached user plan');
+    
     return cachedPlan;
   }
 
   // Fetch from API if not in cache
-  console.log('🌐 Fetching user plan from API');
+  
   const plan = await fetchUserActivePlan(userId);
   
   if (plan) {
@@ -60,12 +60,12 @@ export const getCachedStoredPlan = async (userId: string): Promise<StoredPlan | 
   // Try to get from cache first
   const cachedPlan = dataCache.get<StoredPlan>(cacheKey);
   if (cachedPlan) {
-    console.log('📦 Using cached stored plan');
+    
     return cachedPlan;
   }
 
   // Fetch from API if not in cache
-  console.log('🌐 Fetching stored plan from API');
+  
   const plan = await getUserActivePlan(userId);
   
   if (plan) {
@@ -84,12 +84,12 @@ export const getCachedCompletionStats = async (userId: string) => {
     // Try to get from cache first
     const cachedStats = dataCache.get(cacheKey);
     if (cachedStats) {
-      console.log('📦 Using cached completion stats');
+      
       return cachedStats;
     }
 
     // Fetch from API if not in cache
-    console.log('🌐 Fetching completion stats from API for user:', userId);
+    
     const { data: completions, error } = await supabase
       .from('day_completions')
       .select('completed_date')
@@ -98,8 +98,7 @@ export const getCachedCompletionStats = async (userId: string) => {
       .order('completed_date', { ascending: false });
 
     if (error) {
-      console.error('Error fetching completion stats:', error);
-      console.error('Error details:', JSON.stringify(error, null, 2));
+      console.log('Error fetching completion stats:', error);
       return {
         totalDaysCompleted: 0,
         currentStreak: 0,
@@ -109,9 +108,7 @@ export const getCachedCompletionStats = async (userId: string) => {
       };
     }
 
-    console.log('📊 Completion stats data received:', completions);
-    console.log('📊 Data type:', typeof completions);
-    console.log('📊 Is array:', Array.isArray(completions));
+    console.log('Fetched completion stats from database');
 
     // Handle different data structures safely with extra validation
     let completedDates: string[] = [];
@@ -130,8 +127,7 @@ export const getCachedCompletionStats = async (userId: string) => {
         }
       }
     } catch (mapError) {
-      console.error('❌ Error processing completion stats data:', mapError);
-      console.error('❌ Problematic data:', completions);
+      console.log('Error mapping completion dates:', mapError);
       completedDates = [];
     }
     const stats = calculateStats(completedDates);
@@ -141,7 +137,7 @@ export const getCachedCompletionStats = async (userId: string) => {
     
     return stats;
   } catch (error) {
-    console.error('Error in getCachedCompletionStats:', error);
+    console.log('Error in getCachedCompletionStats:', error);
     return {
       totalDaysCompleted: 0,
       currentStreak: 0,
@@ -160,12 +156,12 @@ export const getCachedCompletedDays = async (userId: string): Promise<Set<string
     // Try to get from cache first
     const cachedDays = dataCache.get<string[]>(cacheKey);
     if (cachedDays) {
-      console.log('📦 Using cached completed days');
+      
       return new Set(cachedDays);
     }
 
     // Fetch from API if not in cache
-    console.log('🌐 Fetching completed days from API for user:', userId);
+    
     const { data, error } = await supabase
       .from('day_completions')
       .select('completed_date')
@@ -173,14 +169,11 @@ export const getCachedCompletedDays = async (userId: string): Promise<Set<string
       .eq('is_active', true);
 
     if (error) {
-      console.error('Error fetching completed days:', error);
-      console.error('Error details:', JSON.stringify(error, null, 2));
+      console.log('Error fetching completed days:', error);
       return new Set();
     }
 
-    console.log('📅 Completed days data received:', data);
-    console.log('📅 Data type:', typeof data);
-    console.log('📅 Is array:', Array.isArray(data));
+    console.log('Fetched completed days from database');
 
     // Handle different data structures safely with extra validation
     let completedDates: string[] = [];
@@ -199,8 +192,7 @@ export const getCachedCompletedDays = async (userId: string): Promise<Set<string
         }
       }
     } catch (mapError) {
-      console.error('❌ Error processing completed days data:', mapError);
-      console.error('❌ Problematic data:', data);
+      console.log('Error mapping completed dates:', mapError);
       completedDates = [];
     }
     
@@ -209,7 +201,7 @@ export const getCachedCompletedDays = async (userId: string): Promise<Set<string
     
     return new Set(completedDates);
   } catch (error) {
-    console.error('Error in getCachedCompletedDays:', error);
+    console.log('Error in getCachedCompletedDays:', error);
     return new Set();
   }
 };
@@ -289,8 +281,7 @@ const calculateStats = (completedDates: string[]) => {
 // Function to test database connection
 export const testDatabaseConnection = async () => {
   try {
-    console.log('🔍 Testing database connection...');
-    
+    console.log('Testing database connection...');
     // Test basic connection
     const { data, error } = await supabase
       .from('day_completions')
@@ -298,27 +289,25 @@ export const testDatabaseConnection = async () => {
       .limit(1);
     
     if (error) {
-      console.error('❌ Database connection test failed:', error);
+      console.log('Database connection test failed:', error);
       return false;
     }
-    
-    console.log('✅ Database connection test successful');
+    console.log('Database connection test successful');
     return true;
   } catch (error) {
-    console.error('❌ Database connection test error:', error);
+    console.log('Database connection test error:', error);
     return false;
   }
 };
 
 // Function to preload data for instant access
 export const preloadUserData = async (userId: string) => {
-  console.log('🚀 Preloading user data for instant access...');
-  
+  console.log('Preloading user data for:', userId);
   try {
     // Test database connection first
     const dbConnected = await testDatabaseConnection();
     if (!dbConnected) {
-      console.warn('⚠️ Database connection failed, using cached data only');
+      console.log('Database not connected, skipping preload');
     }
     
     // Preload all user data in parallel
@@ -330,8 +319,8 @@ export const preloadUserData = async (userId: string) => {
       getCachedCompletedDays(userId)
     ]);
     
-    console.log('✅ User data preloaded successfully');
+    console.log('User data preloaded successfully');
   } catch (error) {
-    console.error('❌ Error preloading user data:', error);
+    console.log('Error preloading user data:', error);
   }
 };

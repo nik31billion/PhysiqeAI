@@ -76,7 +76,7 @@ Get your Aura on Flex Aura!
       return { success: false, error: 'Share failed' };
     }
   } catch (error) {
-    console.error('Error sharing glow card:', error);
+    
     return { success: false, error: 'Failed to share glow card' };
   }
 }
@@ -114,7 +114,7 @@ Join me on my fitness journey with Flex Aura!
       return { success: false, error: 'Share failed' };
     }
   } catch (error) {
-    console.error('Error sharing milestone:', error);
+    
     return { success: false, error: 'Failed to share milestone' };
   }
 }
@@ -155,7 +155,7 @@ Level up your fitness game with Flex Aura!
       return { success: false, error: 'Share failed' };
     }
   } catch (error) {
-    console.error('Error sharing achievement:', error);
+    
     return { success: false, error: 'Failed to share achievement' };
   }
 }
@@ -203,7 +203,7 @@ Get your streak on with Flex Aura!
       return { success: false, error: 'Share failed' };
     }
   } catch (error) {
-    console.error('Error sharing streak milestone:', error);
+    
     return { success: false, error: 'Failed to share streak milestone' };
   }
 }
@@ -243,7 +243,7 @@ Join me on Flex Aura and start earning your Aura!
       return { success: false, error: 'Share failed' };
     }
   } catch (error) {
-    console.error('Error sharing workout completion:', error);
+    
     return { success: false, error: 'Failed to share workout completion' };
   }
 }
@@ -283,7 +283,7 @@ Track your meals and earn Aura on Flex Aura!
       return { success: false, error: 'Share failed' };
     }
   } catch (error) {
-    console.error('Error sharing meal completion:', error);
+    
     return { success: false, error: 'Failed to share meal completion' };
   }
 }
@@ -322,7 +322,7 @@ Download Flex Aura and start earning your Aura today!
       return { success: false, error: 'Share failed' };
     }
   } catch (error) {
-    console.error('Error sharing referral link:', error);
+    
     return { success: false, error: 'Failed to share referral link' };
   }
 }
@@ -395,7 +395,7 @@ export async function shareImageWithSocial(
       return { success: false, error: 'Share failed' };
     }
   } catch (error: any) {
-    console.error('Error sharing image:', error);
+    
     return { success: false, error: 'Failed to share image' };
   }
 }
@@ -439,7 +439,7 @@ async function shareToSpecificPlatform(
       return false;
     }
   } catch (error) {
-    console.error(`Error sharing to ${platform}:`, error);
+    
     return false;
   }
 }
@@ -511,7 +511,7 @@ Get your Aura on Flex Aura!
       platform,
     });
   } catch (error) {
-    console.error('Error sharing glow card with image:', error);
+    
     return { success: false, error: 'Failed to share glow card' };
   }
 }

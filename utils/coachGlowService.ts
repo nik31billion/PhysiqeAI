@@ -62,13 +62,19 @@ export async function sendMessageToCoachGlow(
       body: message
     })
 
+    // Check if the response contains a user-friendly error message
+    if (data && !data.success && data.error) {
+      throw new Error(data.error)
+    }
+
     if (error) {
-      throw new Error(`Coach Glow error: ${error.message}`)
+      // Provide a user-friendly error message instead of technical details
+      throw new Error('I had trouble connecting. Please try again in a moment.')
     }
 
     return data as CoachGlowResponse
   } catch (error) {
-    console.error('Error sending message to Coach Glow:', error)
+    
     throw error
   }
 }
@@ -84,13 +90,19 @@ export async function applyPlanSwap(
       body: swapRequest
     })
 
+    // Check if the response contains a user-friendly error message
+    if (data && !data.success && data.error) {
+      throw new Error(data.error)
+    }
+
     if (error) {
-      throw new Error(`Apply swap error: ${error.message}`)
+      // Provide a user-friendly error message instead of technical details
+      throw new Error('I had trouble updating your plan. Please try again.')
     }
 
     return data as ApplySwapResponse
   } catch (error) {
-    console.error('Error applying plan swap:', error)
+    
     throw error
   }
 }
@@ -118,9 +130,10 @@ export async function getCoachGlowChatHistory(
       throw new Error(`Failed to fetch chat history: ${error.message}`)
     }
 
-    return data || []
+    // Reverse to get chronological order (oldest first) for proper display
+    return (data || []).reverse()
   } catch (error) {
-    console.error('Error fetching chat history:', error)
+    
     throw error
   }
 }
@@ -150,9 +163,10 @@ export async function getCoachGlowChatHistoryByIntent(
       throw new Error(`Failed to fetch chat history: ${error.message}`)
     }
 
-    return data || []
+    // Reverse to get chronological order (oldest first) for proper display
+    return (data || []).reverse()
   } catch (error) {
-    console.error('Error fetching chat history by intent:', error)
+    
     throw error
   }
 }

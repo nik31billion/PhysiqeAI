@@ -38,6 +38,15 @@ export { default as NotificationSettingsModal } from './NotificationSettingsModa
 export { default as NotificationToast } from './NotificationToast';
 export { default as MilestoneCelebrationModal } from './MilestoneCelebrationModal';
 
+// Subscription components
+export { default as SubscriptionManagementModal } from './SubscriptionManagementModal';
+
+// Food Scanner components
+export { default as FloatingCameraButton } from './FloatingCameraButton';
+export { default as FoodScannerCamera } from './FoodScannerCamera';
+export { default as FoodAnalysisResults } from './FoodAnalysisResults';
+export { default as FoodAnalysisLoadingScreen } from './FoodAnalysisLoadingScreen';
+
 // Example components (to be created):
 // export { default as Button } from './Button';
 // export { default as Card } from './Card';

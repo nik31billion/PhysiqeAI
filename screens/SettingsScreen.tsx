@@ -13,15 +13,18 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../utils/AuthContext';
+import { useRevenueCat } from '../utils/RevenueCatContext';
 import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../utils/supabase';
-import { NotificationSettingsModal } from '../components';
+import { NotificationSettingsModal, SubscriptionManagementModal } from '../components';
 
 const SettingsScreen: React.FC = () => {
   const { user, signOut } = useAuth();
+  const { isProUser } = useRevenueCat();
   const navigation = useNavigation();
   const [isDeleting, setIsDeleting] = useState(false);
   const [notificationSettingsVisible, setNotificationSettingsVisible] = useState(false);
+  const [subscriptionModalVisible, setSubscriptionModalVisible] = useState(false);
 
   const handleDeleteAccount = () => {
     Alert.alert(
@@ -74,7 +77,7 @@ const SettingsScreen: React.FC = () => {
       });
 
       if (error) {
-        console.error('Error deleting account:', error);
+        
         Alert.alert('Error', 'Failed to delete account. Please try again.');
         setIsDeleting(false);
         return;
@@ -88,7 +91,7 @@ const SettingsScreen: React.FC = () => {
       
       Alert.alert('Account Deleted', 'Your account has been permanently deleted.');
     } catch (error) {
-      console.error('Error deleting account:', error);
+      
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
       setIsDeleting(false);
@@ -149,6 +152,26 @@ const SettingsScreen: React.FC = () => {
                 </View>
                 <Text style={styles.settingValue}>{user?.email}</Text>
               </View>
+              
+              <View style={styles.divider} />
+              
+              <TouchableOpacity 
+                style={styles.settingItem}
+                onPress={() => navigation.navigate('SubscriptionScreen' as never)}
+              >
+                <View style={styles.settingInfo}>
+                  <Ionicons name="diamond-outline" size={20} color="#937AFD" />
+                  <Text style={styles.settingLabel}>Subscription</Text>
+                </View>
+                <View style={styles.subscriptionStatus}>
+                  <Text style={[styles.subscriptionStatusText, { 
+                    color: isProUser ? '#10B981' : '#6B7280' 
+                  }]}>
+                    {isProUser ? 'Pro' : 'Free'}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color="#a2b2b7" />
+                </View>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -248,6 +271,12 @@ const SettingsScreen: React.FC = () => {
         onClose={() => setNotificationSettingsVisible(false)}
         userId={user?.id || ''}
       />
+
+      {/* Subscription Management Modal */}
+      <SubscriptionManagementModal
+        visible={subscriptionModalVisible}
+        onClose={() => setSubscriptionModalVisible(false)}
+      />
     </LinearGradient>
   );
 };
@@ -337,6 +366,15 @@ const styles = StyleSheet.create({
   },
   dangerText: {
     color: '#ff6b6b',
+  },
+  subscriptionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  subscriptionStatusText: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginRight: 4,
   },
 });
 

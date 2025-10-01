@@ -60,8 +60,8 @@ function calculateTargetCalories(tdee: number, goal_type: CalorieCalculationInpu
       return Math.max(tdee - 800, tdee - 450);
 
     case 'gain':
-      // For weight gain: surplus of 250 kcal/day, max +500
-      return Math.min(tdee + 500, tdee + 250);
+      // For weight gain: surplus of 250-500 kcal/day
+      return tdee + 350; // Middle ground for muscle gain
 
     case 'maintain':
       // For maintenance: equal to TDEE
@@ -190,7 +190,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('Error calculating calories:', error);
+    
 
     return new Response(
       JSON.stringify({

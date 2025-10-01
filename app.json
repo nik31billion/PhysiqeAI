@@ -4,32 +4,55 @@
     "slug": "flex-aura",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/mascot/flex_aura_logo_no_bg.png",
+    "icon": "./assets/mascot/flex_aura_new_logo_no_bg_2.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "splash": {
-      "image": "./assets/mascot/flex_aura_logo_no_bg.png",
+      "image": "./assets/mascot/flex_aura_new_logo_no_bg_2.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "com.applotictech.flexaura",
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Flex Aura uses the camera to scan food items and analyze their nutritional content for accurate calorie tracking and meal planning."
+      },
+      "buildNumber": "4"
     },
     "android": {
+      "package": "com.applotictech.flexaura",
+      "versionCode": 116,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/mascot/flex_aura_logo_no_bg.png",
+        "foregroundImage": "./assets/mascot/flex_aura_new_logo_no_bg_2.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true
     },
     "notification": {
-      "icon": "./assets/mascot/flex_aura_logo_no_bg.png",
+      "icon": "./assets/mascot/flex_aura_new_logo_no_bg_2.png",
       "color": "#B7FCE7",
       "androidMode": "default",
       "androidCollapsedTitle": "Flex Aura"
     },
     "web": {
-      "favicon": "./assets/mascot/flex_aura_logo_no_bg.png"
-    }
+      "favicon": "./assets/mascot/flex_aura_new_logo_no_bg_2.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d260ffad-663b-4fdc-82a8-fc60808b6924"
+      }
+    },
+    "owner": "nikunjtulsyan",
+    "plugins": [
+      "expo-secure-store",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.249953575983-3kf0p4urs0mijvclro29j59ec7t6n5g3"
+        }
+      ]
+    ],
+    "scheme": "com.applotictech.flexaura"
   }
 }

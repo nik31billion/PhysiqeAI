@@ -44,7 +44,7 @@ export async function calculateCaloriesViaEdgeFunction(inputs: CalorieCalculatio
 
     return data as CalorieCalculationOutputs;
   } catch (error) {
-    console.error('Error calling calorie calculation edge function:', error);
+    
     throw error;
   }
 }
@@ -72,10 +72,10 @@ export { calculateCalories as calculateCaloriesLocally } from './calorieCalculat
  *
  * try {
  *   const calories = await calculateCaloriesViaEdgeFunction(userData);
- *   console.log('Calculated calories:', calories);
+ *   
  *   // Store these values in your database or use them for plan generation
  * } catch (error) {
- *   console.error('Failed to calculate calories:', error);
+ *   
  *   // Handle error (show user message, retry, etc.)
  * }
  */

@@ -46,7 +46,7 @@ serve(async (req) => {
       .rpc('delete_user_data', { user_id: userId })
 
     if (deleteError) {
-      console.error('Error calling delete_user_data function:', deleteError)
+      
       return new Response(
         JSON.stringify({ error: 'Failed to delete user data' }),
         { 
@@ -57,7 +57,7 @@ serve(async (req) => {
     }
 
     if (!data) {
-      console.error('delete_user_data function returned false')
+      
       return new Response(
         JSON.stringify({ error: 'Failed to delete user data' }),
         { 
@@ -67,7 +67,7 @@ serve(async (req) => {
       )
     }
 
-    console.log('User data deleted successfully via database function')
+    
 
     return new Response(
       JSON.stringify({ success: true, message: 'User account deleted successfully' }),
@@ -78,7 +78,7 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('Error in delete-user-data function:', error)
+    
     return new Response(
       JSON.stringify({ error: 'Internal server error' }),
       { 

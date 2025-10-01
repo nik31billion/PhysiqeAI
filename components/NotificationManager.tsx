@@ -20,7 +20,7 @@ interface NotificationManagerProps {
   children: React.ReactNode;
 }
 
-// Global notification state
+// Global notification state - React Native compatible
 let globalToastState: ToastState = {
   visible: false,
   title: '',
@@ -32,6 +32,9 @@ let globalMilestoneState: MilestoneState = {
   visible: false,
   milestone: '',
 };
+
+// Global callback function - React Native compatible
+let globalNotificationUpdateCallback: (() => void) | null = null;
 
 // Global functions to control notifications
 export const showToast = (
@@ -45,9 +48,9 @@ export const showToast = (
     message,
     type,
   };
-  // Trigger re-render by updating a global state or using a callback
-  if (window.notificationUpdateCallback) {
-    window.notificationUpdateCallback();
+  // Trigger re-render using global callback
+  if (globalNotificationUpdateCallback) {
+    globalNotificationUpdateCallback();
   }
 };
 
@@ -57,8 +60,8 @@ export const showMilestone = (milestone: string, streakDays?: number) => {
     milestone,
     streakDays,
   };
-  if (window.notificationUpdateCallback) {
-    window.notificationUpdateCallback();
+  if (globalNotificationUpdateCallback) {
+    globalNotificationUpdateCallback();
   }
 };
 
@@ -68,13 +71,13 @@ const NotificationManager: React.FC<NotificationManagerProps> = ({ children }) =
 
   useEffect(() => {
     // Set up global callback
-    window.notificationUpdateCallback = () => {
+    globalNotificationUpdateCallback = () => {
       setToastState({ ...globalToastState });
       setMilestoneState({ ...globalMilestoneState });
     };
 
     return () => {
-      window.notificationUpdateCallback = null;
+      globalNotificationUpdateCallback = null;
     };
   }, []);
 
@@ -116,12 +119,5 @@ const NotificationManager: React.FC<NotificationManagerProps> = ({ children }) =
     </View>
   );
 };
-
-// Extend Window interface for TypeScript
-declare global {
-  interface Window {
-    notificationUpdateCallback: (() => void) | null;
-  }
-}
 
 export default NotificationManager;

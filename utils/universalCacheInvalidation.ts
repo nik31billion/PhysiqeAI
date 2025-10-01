@@ -9,7 +9,7 @@ import { dataCache } from './dataCache';
  * This ensures ALL screens update immediately regardless of the action
  */
 export const invalidateCacheForAnyUserAction = (userId: string, actionType?: string) => {
-  console.log(`🗑️ Universal cache invalidation for user action: ${actionType || 'unknown'}`, userId);
+  
   
   // For ANY user action, invalidate all relevant caches
   // This ensures immediate updates across all screens
@@ -47,7 +47,7 @@ export const withCacheInvalidation = <T extends any[], R>(
  * Specific invalidation for onboarding actions
  */
 export const invalidateCacheForOnboarding = (userId: string, step: number) => {
-  console.log(`🗑️ Cache invalidation for onboarding step ${step}`, userId);
+  
   
   // Onboarding updates user profile, so invalidate profile cache
   dataCache.delete(dataCache.getUserProfileKey(userId));
@@ -63,7 +63,7 @@ export const invalidateCacheForOnboarding = (userId: string, step: number) => {
  * Specific invalidation for authentication actions
  */
 export const invalidateCacheForAuth = (userId: string, action: 'login' | 'signup' | 'logout') => {
-  console.log(`🗑️ Cache invalidation for auth action: ${action}`, userId);
+  
   
   if (action === 'logout') {
     // On logout, clear all cache
@@ -82,7 +82,7 @@ export const invalidateCacheForAuth = (userId: string, action: 'login' | 'signup
  * Specific invalidation for profile actions
  */
 export const invalidateCacheForProfile = (userId: string, action: 'edit' | 'photo_upload' | 'plan_edit') => {
-  console.log(`🗑️ Cache invalidation for profile action: ${action}`, userId);
+  
   
   switch (action) {
     case 'edit':

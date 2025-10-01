@@ -77,7 +77,7 @@ export function useAura(userId: string | null): UseAuraReturn {
       const summary = await getUserAuraSummary(userId);
       setAuraSummary(summary);
     } catch (error) {
-      console.error('Error fetching aura summary:', error);
+      
     }
   }, [userId]);
 
@@ -91,7 +91,7 @@ export function useAura(userId: string | null): UseAuraReturn {
         setAchievements(result.data);
       }
     } catch (error) {
-      console.error('Error fetching achievements:', error);
+      
     } finally {
       setLoadingAchievements(false);
     }
@@ -107,7 +107,7 @@ export function useAura(userId: string | null): UseAuraReturn {
         setRecentEvents(result.data);
       }
     } catch (error) {
-      console.error('Error fetching recent events:', error);
+      
     } finally {
       setLoadingEvents(false);
     }
@@ -124,7 +124,7 @@ export function useAura(userId: string | null): UseAuraReturn {
         fetchRecentEvents(),
       ]);
     } catch (error) {
-      console.error('Error refreshing aura data:', error);
+      
     } finally {
       setLoading(false);
     }
@@ -153,7 +153,7 @@ export function useAura(userId: string | null): UseAuraReturn {
       }
       return result;
     } catch (error) {
-      console.error('Error sharing glow card:', error);
+      
       return { success: false, error: 'Failed to share glow card' };
     }
   }, [userId, fetchAuraSummary]);
@@ -178,7 +178,7 @@ export function useAura(userId: string | null): UseAuraReturn {
       }
       return result;
     } catch (error) {
-      console.error('Error adding aura points:', error);
+      
       return { success: false, error: 'Failed to add aura points' };
     }
   }, [userId, fetchAuraSummary, fetchAchievements]);

@@ -8,6 +8,8 @@ import {
   StatusBar,
   Image,
   Animated,
+  InteractionManager,
+  AppState,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -15,6 +17,7 @@ import { useOnboardingNavigation } from '../utils/useOnboardingNavigation';
 import { OnboardingErrorHandler } from '../components/OnboardingErrorHandler';
 import { getPlanGenerationStatus } from '../utils/planService';
 import { useAuth } from '../utils/AuthContext';
+import { calculateProgressEstimation, DEFAULT_PROGRESS_STAGES } from '../utils/progressEstimation';
 
 const { width, height } = Dimensions.get('window');
 
@@ -27,6 +30,9 @@ const OnboardingScreen20: React.FC = () => {
   const [actualPlanStatus, setActualPlanStatus] = useState<'generating' | 'completed' | 'failed' | 'not_started'>('not_started');
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [statusCheckInterval, setStatusCheckInterval] = useState<NodeJS.Timeout | null>(null);
+  const [planGenerationStartTime, setPlanGenerationStartTime] = useState<number | null>(null);
+  const [estimatedProgress, setEstimatedProgress] = useState(0);
+  const [progressUpdateInterval, setProgressUpdateInterval] = useState<NodeJS.Timeout | null>(null);
   
   // Dynamic content state
   const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
@@ -36,68 +42,233 @@ const OnboardingScreen20: React.FC = () => {
   // Animation values
   const ringRotation = useRef(new Animated.Value(0)).current;
   const glowAnimation = useRef(new Animated.Value(0)).current;
-  const progressAnimation = useRef(new Animated.Value(0)).current;
   const pulseAnimation = useRef(new Animated.Value(1)).current;
   const messageFadeAnimation = useRef(new Animated.Value(1)).current;
   const tipSlideAnimation = useRef(new Animated.Value(0)).current;
   const sparkleAnimation = useRef(new Animated.Value(0)).current;
+  const messageIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Dynamic content arrays
-  const motivationalMessages = [
-    "Analyzing your fitness goals...",
-    "Designing your perfect workout routine...",
-    "Crafting your personalized meal plan...",
-    "Calculating your optimal calorie targets...",
-    "Creating your weekly schedule...",
-    "Adding the final touches to your plan...",
-    "Almost there! Your transformation journey awaits...",
-    "Preparing your custom Vibe Plan..."
-  ];
+  // Use the standardized progress stages
+  const progressStages = DEFAULT_PROGRESS_STAGES;
 
-  const fitnessTips = [
-    "💡 Consistency beats perfection every time!",
-    "🏃‍♀️ Small steps lead to big transformations!",
-    "💪 Your body can do amazing things - believe in it!",
-    "🥗 Nutrition is 70% of your fitness journey!",
-    "😴 Sleep is when your muscles grow and recover!",
-    "🎯 Progress, not perfection, is the goal!",
-    "🔥 Every expert was once a beginner!",
-    "⭐ You're already one step closer to your goals!"
-  ];
+  // Native-driven progress animation
+  const progressAnimation = useRef(new Animated.Value(5)).current;
+  const animationRef = useRef<number | null>(null);
+  const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const appStateRef = useRef(AppState.currentState);
+  
+  // Enhanced progress estimation using the utility function
+  const updateProgressEstimation = () => {
+    if (!planGenerationStartTime) return;
+    
+    const { progress, stageIndex } = calculateProgressEstimation(planGenerationStartTime);
+    const elapsedTime = Date.now() - planGenerationStartTime;
+    
+    console.log(`Progress update: ${elapsedTime}ms elapsed, ${progress}%, stage ${stageIndex}`);
+    
+    // CRITICAL FIX: Update state immediately without setTimeout
+    // Use requestAnimationFrame for smoother updates
+    requestAnimationFrame(() => {
+      setEstimatedProgress(progress);
+      if (stageIndex !== progressStage) {
+        setProgressStage(stageIndex);
+        setCurrentMessageIndex(stageIndex);
+        setCurrentTipIndex(stageIndex);
+      }
+    });
+    
+    // Use native-driven animation for progress bar with immediate start
+    progressAnimation.setValue(progress);
+    
+    // Update stage and messages with animation
+    if (stageIndex !== progressStage) {
+      // Animate message transition
+      Animated.sequence([
+        Animated.timing(messageFadeAnimation, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: false,
+        }),
+        Animated.timing(messageFadeAnimation, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: false,
+        }),
+      ]).start();
+    }
+  };
+  
+  // Simplified progress update mechanism - single timer to prevent crashes
+  const startProgressUpdatesWithTime = (startTime: number) => {
+    console.log(`[Onboarding] Starting progress updates with startTime: ${startTime}`);
+    
+    // Clear any existing timers
+    if (progressTimerRef.current) {
+      console.log('[Onboarding] Clearing existing progress timer');
+      clearTimeout(progressTimerRef.current);
+    }
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+    }
+    
+    // CRITICAL FIX: Use a recursive setTimeout instead of setInterval for more reliability
+    const updateProgress = () => {
+      const elapsedTime = Date.now() - startTime;
+      let { progress, stageIndex } = calculateProgressEstimation(startTime);
+      
+      // CRITICAL FIX: Only apply backend completion logic if backend is actually completed
+      // AND we're at a reasonable progress level (not jumping from 7% to 100%)
+      if (actualPlanStatus === 'completed' && progress >= 90) {
+        // Calculate how long since backend completed
+        const timeSinceCompletion = elapsedTime - (planGenerationStartTime ? Date.now() - planGenerationStartTime : 0);
+        
+        // If backend completed and we're at 90%+, smoothly go to 100%
+        if (progress >= 90) {
+          // Smooth transition to 100% over 2-3 seconds
+          const completionProgress = Math.min(90 + (timeSinceCompletion / 2000) * 10, 100);
+          progress = Math.floor(completionProgress);
+          stageIndex = progressStages.length - 1; // Final stage
+        }
+      }
+      
+      console.log(`[Onboarding] Progress update: ${elapsedTime}ms elapsed, ${progress}%, stage ${stageIndex}, current estimated: ${estimatedProgress}, backend status: ${actualPlanStatus}`);
+      
+      // CRITICAL FIX: Update state and animation immediately
+      setEstimatedProgress(progress);
+      if (stageIndex !== progressStage) {
+        setProgressStage(stageIndex);
+        setCurrentMessageIndex(stageIndex);
+        setCurrentTipIndex(stageIndex);
+      }
+      
+      // CRITICAL FIX: Use Animated.timing for smooth visual updates
+      Animated.timing(progressAnimation, {
+        toValue: progress,
+        duration: 200, // Smooth transition
+        useNativeDriver: false, // Required for width animations
+      }).start();
+      
+      // CRITICAL FIX: Always continue the timer unless we've reached 100% or failed
+      if (actualPlanStatus === 'failed') {
+        console.log('[Onboarding] Plan generation failed, stopping progress timer');
+        progressTimerRef.current = null;
+      } else if (actualPlanStatus === 'completed' && progress >= 100) {
+        // Only stop when we've reached 100% naturally
+        console.log('[Onboarding] Progress completed naturally at 100%, stopping timer');
+        progressTimerRef.current = null;
+        
+        // Set final completion state
+        setProgressStage(progressStages.length - 1);
+        setCurrentMessageIndex(progressStages.length - 1);
+        setCurrentTipIndex(progressStages.length - 1);
+      } else {
+        // Continue the timer for all other cases (generating, not_started, completed but < 100%)
+        progressTimerRef.current = setTimeout(updateProgress, 250) as any;
+        console.log(`[Onboarding] Continuing progress timer, next update in 250ms, ref: ${progressTimerRef.current}`);
+      }
+    };
+    
+    // Start the recursive timer
+    console.log('[Onboarding] Starting recursive progress timer');
+    
+    // CRITICAL FIX: Call updateProgress immediately first, then start the timer
+    console.log('[Onboarding] Calling updateProgress immediately...');
+    updateProgress();
+    
+    // Then start the recursive timer
+    progressTimerRef.current = setTimeout(updateProgress, 250) as any;
+    console.log('[Onboarding] Progress timer started, ref:', progressTimerRef.current);
+  };
+  
+  // App state change handler
+  const handleAppStateChange = (nextAppState: string) => {
+    if (appStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+      // App has come to the foreground, restart progress updates
+      if (actualPlanStatus === 'generating') {
+        // Restart progress updates if needed
+        if (planGenerationStartTime) {
+          startProgressUpdatesWithTime(planGenerationStartTime);
+        }
+      }
+    }
+    appStateRef.current = nextAppState as any;
+  };
 
-  const progressStages = [
-    { stage: "Initializing", progress: 10, emoji: "🚀" },
-    { stage: "Analyzing Goals", progress: 25, emoji: "🎯" },
-    { stage: "Designing Workouts", progress: 40, emoji: "🏋️‍♂️" },
-    { stage: "Creating Meal Plans", progress: 60, emoji: "🍽️" },
-    { stage: "Optimizing Schedule", progress: 80, emoji: "📅" },
-    { stage: "Finalizing Plan", progress: 95, emoji: "✨" },
-    { stage: "Ready!", progress: 100, emoji: "🎉" }
-  ];
+  // Start progress system
+  const startFakeProgress = () => {
+    const startTime = Date.now();
+    setActualPlanStatus('generating');
+    setPlanGenerationStartTime(startTime);
+    setEstimatedProgress(5);
+    
+    // CRITICAL FIX: Set initial progress animation value immediately with smooth animation
+    Animated.timing(progressAnimation, {
+      toValue: 5,
+      duration: 100,
+      useNativeDriver: false,
+    }).start();
+    
+    // Start progress updates
+    startProgressUpdatesWithTime(startTime);
+  };
 
-  // Function to check plan generation status
+  // Function to check plan generation status (FIXED)
   const checkPlanStatus = async () => {
     if (!user || isCheckingStatus) return;
     
     setIsCheckingStatus(true);
     try {
       const status = await getPlanGenerationStatus(user.id);
-      console.log('📊 Plan status check result:', status);
-      setActualPlanStatus(status);
       
-      // If plan is completed or failed, stop checking
-      if ((status === 'completed' || status === 'failed') && statusCheckInterval) {
-        clearInterval(statusCheckInterval);
-        setStatusCheckInterval(null);
+      // CRITICAL FIX: Only update status if it's actually different
+      if (status !== actualPlanStatus) {
+        console.log(`[Onboarding] Status changed from ${actualPlanStatus} to ${status}`);
+        setActualPlanStatus(status);
       }
+      
+      // If we find a completed plan, finish the progress
+      if (status === 'completed') {
+        console.log('Plan generation completed!');
+        
+        // CRITICAL FIX: Don't jump to 100% immediately
+        // Let the progress timer continue naturally until it reaches 100%
+        // This prevents the jarring jump from 97% to 100%
+        
+        // Clear status check interval but keep progress timer running
+        if (statusCheckInterval) {
+          clearInterval(statusCheckInterval);
+          setStatusCheckInterval(null);
+        }
+        
+        // DON'T clear the progress timer - let it continue to 100% naturally
+        // The progress timer will handle the smooth transition to 100%
+        console.log('[Onboarding] Backend completed, but letting progress timer finish naturally');
+        
+      } else if (status === 'failed') {
+        console.log('Plan generation failed');
+        
+        // Clear all intervals
+        if (statusCheckInterval) {
+          clearInterval(statusCheckInterval);
+          setStatusCheckInterval(null);
+        }
+        if (progressTimerRef.current) {
+          clearTimeout(progressTimerRef.current);
+          progressTimerRef.current = null;
+        }
+        if (animationRef.current) {
+          cancelAnimationFrame(animationRef.current);
+          animationRef.current = null;
+        }
+      } else if (status === 'generating') {
+        // CRITICAL FIX: Don't interfere with progress timer when backend is generating
+        console.log('[Onboarding] Backend still generating, progress timer continues...');
+      }
+      // For any other status (not_started), keep the fake progress running
+      
     } catch (error) {
-      console.error('❌ Error checking plan status:', error);
-      setActualPlanStatus('failed');
-      // Stop checking on persistent errors
-      if (statusCheckInterval) {
-        clearInterval(statusCheckInterval);
-        setStatusCheckInterval(null);
-      }
+      console.error('Error checking plan status:', error);
+      // Don't stop fake progress on errors - keep it running
     } finally {
       setIsCheckingStatus(false);
     }
@@ -106,31 +277,79 @@ const OnboardingScreen20: React.FC = () => {
   // Start checking plan status when component mounts
   useEffect(() => {
     if (user) {
-      // Initial check
-      checkPlanStatus();
+      // NEW APPROACH: Start fake progress immediately, then check backend
+      console.log('Component mounted - starting fake progress system');
+      startFakeProgress();
       
-      // Set up polling every 3 seconds if plan is not completed
-      const interval = setInterval(() => {
-        if (actualPlanStatus !== 'completed') {
+      // Set up status polling every 1.5 seconds for responsive updates
+      const statusInterval = setInterval(() => {
+        if (actualPlanStatus !== 'completed' && actualPlanStatus !== 'failed') {
           checkPlanStatus();
+        }
+      }, 1500);
+      
+      // Set up message cycling every 3 seconds
+      const messageInterval = setInterval(() => {
+        if (actualPlanStatus === 'generating') {
+          // Cycle through messages within the current stage
+          const currentStage = progressStages[progressStage];
+          if (currentStage) {
+            Animated.sequence([
+              Animated.timing(messageFadeAnimation, {
+                toValue: 0,
+                duration: 200,
+                useNativeDriver: false,
+              }),
+              Animated.timing(messageFadeAnimation, {
+                toValue: 1,
+                duration: 200,
+                useNativeDriver: false,
+              }),
+            ]).start();
+          }
         }
       }, 3000);
       
-      setStatusCheckInterval(interval);
+      // Store intervals for cleanup
+      setStatusCheckInterval(statusInterval);
+      
+      // Store message interval for cleanup
+      messageIntervalRef.current = messageInterval;
       
       return () => {
-        if (interval) {
-          clearInterval(interval);
+        if (statusInterval) {
+          clearInterval(statusInterval);
+        }
+        if (progressTimerRef.current) {
+          clearTimeout(progressTimerRef.current);
+        }
+        if (animationRef.current) {
+          cancelAnimationFrame(animationRef.current);
+        }
+        if (messageIntervalRef.current) {
+          clearInterval(messageIntervalRef.current);
         }
       };
     }
   }, [user]);
 
-  // Cleanup interval on unmount
+  // App state listener
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription?.remove();
+  }, [actualPlanStatus]);
+  
+  // Cleanup intervals on unmount
   useEffect(() => {
     return () => {
       if (statusCheckInterval) {
         clearInterval(statusCheckInterval);
+      }
+      if (progressTimerRef.current) {
+        clearTimeout(progressTimerRef.current);
+      }
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
       }
     };
   }, [statusCheckInterval]);
@@ -245,40 +464,40 @@ const OnboardingScreen20: React.FC = () => {
     };
   }, [actualPlanStatus]);
 
-  // Cycle through messages and tips during generation
+  // Initialize message and tip indices based on current progress stage
   useEffect(() => {
-    if (actualPlanStatus !== 'generating') return;
-
-    const messageInterval = setInterval(() => {
-      setCurrentMessageIndex((prev) => (prev + 1) % motivationalMessages.length);
-    }, 3000);
-
-    const tipInterval = setInterval(() => {
-      setCurrentTipIndex((prev) => (prev + 1) % fitnessTips.length);
-    }, 4000);
-
-    const progressInterval = setInterval(() => {
-      setProgressStage((prev) => {
-        const nextStage = (prev + 1) % progressStages.length;
-        if (nextStage === 0 && actualPlanStatus === 'generating') {
-          return prev; // Don't reset if still generating
-        }
-        return nextStage;
-      });
-    }, 5000);
-
-    return () => {
-      clearInterval(messageInterval);
-      clearInterval(tipInterval);
-      clearInterval(progressInterval);
-    };
-  }, [actualPlanStatus, motivationalMessages.length, fitnessTips.length, progressStages.length]);
+    if (actualPlanStatus === 'generating') {
+      // Set initial indices based on current progress stage
+      setCurrentMessageIndex(progressStage);
+      setCurrentTipIndex(progressStage);
+    } else if (actualPlanStatus === 'completed') {
+      // Show completion stage
+      setCurrentMessageIndex(progressStages.length - 1);
+      setCurrentTipIndex(progressStages.length - 1);
+    }
+  }, [actualPlanStatus, progressStage]);
 
   const handleContinue = async () => {
     // If plan generation failed, retry plan generation
     if (actualPlanStatus === 'failed') {
-      console.log('🔄 Retrying plan generation...');
+      
+      
+      // Reset all progress indicators to start from 0%
       setActualPlanStatus('generating');
+      setProgressStage(0);
+      setCurrentMessageIndex(0);
+      setCurrentTipIndex(0);
+      setEstimatedProgress(0);
+      setPlanGenerationStartTime(Date.now());
+      
+        // Restart the progress estimation interval
+        if (progressUpdateInterval) {
+          clearInterval(progressUpdateInterval);
+        }
+        const newProgressInterval = setInterval(() => {
+          updateProgressEstimation();
+        }, 500);
+        setProgressUpdateInterval(newProgressInterval);
       
       try {
         // Import the plan generation function
@@ -291,14 +510,14 @@ const OnboardingScreen20: React.FC = () => {
         });
         
         if (response.success) {
-          console.log('✅ Plan generation retry successful');
+          
           setActualPlanStatus('completed');
         } else {
-          console.error('❌ Plan generation retry failed:', response.error);
+          
           setActualPlanStatus('failed');
         }
       } catch (error) {
-        console.error('❌ Error during plan generation retry:', error);
+        
         setActualPlanStatus('failed');
       }
       return;
@@ -308,7 +527,7 @@ const OnboardingScreen20: React.FC = () => {
     if (actualPlanStatus === 'completed') {
       const success = await navigateToNextStep(20, {});
       if (!success) {
-        console.error('Failed to save onboarding data');
+        
       }
     }
   };
@@ -323,36 +542,30 @@ const OnboardingScreen20: React.FC = () => {
     outputRange: [0.4, 0.9],
   });
 
-  // Calculate progress based on actual plan status
-  const getProgressWidth = () => {
-    if (actualPlanStatus === 'completed') return '100%';
-    if (actualPlanStatus === 'failed') return '0%';
-    if (actualPlanStatus === 'generating') return '60%';
-    return '20%'; // not_started or other states
-  };
-
-  const progressWidth = actualPlanStatus === 'completed' || actualPlanStatus === 'failed' 
-    ? getProgressWidth() 
-    : progressAnimation.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['0%', '100%'],
-      });
+  // Use animated progress width
+  const progressWidth = progressAnimation.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+    extrapolate: 'clamp',
+  });
 
   const mascotScale = pulseAnimation;
 
   // Get dynamic messaging based on actual plan generation status
   const getStatusMessage = () => {
     if (actualPlanStatus === 'completed') {
+      const completionStage = progressStages[progressStages.length - 1];
       return {
         title: "Your Plan is Ready!",
-        subtitle: "Perfect! Your personalized plan has been crafted.",
-        description: "Your custom workout & meal plan is ready to go!"
+        subtitle: completionStage.message,
+        description: completionStage.stage
       };
     } else if (actualPlanStatus === 'generating') {
+      const currentStage = progressStages[progressStage] || progressStages[0];
       return {
         title: "AI is Crafting Your Plan",
-        subtitle: motivationalMessages[currentMessageIndex],
-        description: progressStages[progressStage]?.stage || "Creating your perfect plan..."
+        subtitle: currentStage.message,
+        description: currentStage.stage
       };
     } else if (actualPlanStatus === 'failed') {
       return {
@@ -363,8 +576,8 @@ const OnboardingScreen20: React.FC = () => {
     } else {
       return {
         title: "Our AI is Crafting Your\nCustom Vibe Plan!",
-        subtitle: "This might take a moment...",
-        description: "Analyzing your fitness goals and creating your custom workout & meal plan..."
+        subtitle: "Initializing plan generation...",
+        description: "Getting ready to analyze your fitness goals and create your custom workout & meal plan..."
       };
     }
   };
@@ -462,34 +675,16 @@ const OnboardingScreen20: React.FC = () => {
           )}
           
           <View style={styles.progressBarBackground}>
-            {actualPlanStatus === 'completed' || actualPlanStatus === 'failed' ? (
-              <View 
-                style={[
-                  styles.progressBarFill,
-                  { 
-                    width: getProgressWidth(),
-                    backgroundColor: actualPlanStatus === 'completed' ? '#10B981' : '#EF4444'
-                  }
-                ]}
-              />
-            ) : actualPlanStatus === 'generating' ? (
-              <View 
-                style={[
-                  styles.progressBarFill,
-                  { 
-                    width: `${progressStages[progressStage]?.progress || 10}%`,
-                    backgroundColor: '#B88CFF'
-                  }
-                ]}
-              />
-            ) : (
-              <Animated.View 
-                style={[
-                  styles.progressBarFill,
-                  { width: progressWidth }
-                ]}
-              />
-            )}
+            <Animated.View 
+              style={[
+                styles.progressBarFill,
+                { 
+                  width: progressWidth,
+                  backgroundColor: actualPlanStatus === 'completed' ? '#10B981' : 
+                                 actualPlanStatus === 'failed' ? '#EF4444' : '#B88CFF'
+                }
+              ]}
+            />
           </View>
           
           <Text style={[
@@ -499,8 +694,8 @@ const OnboardingScreen20: React.FC = () => {
             actualPlanStatus === 'generating' && { color: '#B88CFF' }
           ]}>
             {actualPlanStatus === 'completed' ? '100%' : 
-             actualPlanStatus === 'generating' ? `${progressStages[progressStage]?.progress || 10}%` : 
-             actualPlanStatus === 'failed' ? 'Failed' : 'Preparing...'}
+             actualPlanStatus === 'generating' ? `${estimatedProgress}%` : 
+             actualPlanStatus === 'failed' ? 'Failed' : '5%'}
           </Text>
         </View>
 
@@ -527,7 +722,7 @@ const OnboardingScreen20: React.FC = () => {
           >
             <View style={styles.tipCard}>
               <Text style={styles.tipText}>
-                {fitnessTips[currentTipIndex]}
+                {progressStages[currentTipIndex]?.tip || progressStages[0].tip}
               </Text>
             </View>
           </Animated.View>
@@ -718,11 +913,11 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 18,
-    color: '#5A5A5A',
+    color: '#1B1B1F',
     textAlign: 'center',
     lineHeight: 26,
     fontFamily: 'System',
-    fontWeight: '500',
+    fontWeight: '600',
     marginBottom: 40,
   },
   buttonContainer: {

@@ -37,15 +37,15 @@ const AchievementCard: React.FC<AchievementCardProps> = ({
     return iconMap[iconName] || iconMap.star;
   };
 
-  const getAchievementGradient = (category: string): [string, string] => {
-    const gradients: { [key: string]: [string, string] } = {
-      streak: ['#FF6B6B', '#FF8E53'],
-      milestone: ['#4ECDC4', '#44A08D'],
-      social: ['#667eea', '#764ba2'],
-      progress: ['#f093fb', '#f5576c'],
+  const getAchievementBackground = (category: string): string => {
+    const backgrounds: { [key: string]: string } = {
+      streak: '#FFE0D6', // Coral tint
+      milestone: '#C9F3C5', // Mint
+      social: '#D8C5FF', // Lavender
+      progress: '#C9F3C5', // Mint
     };
     
-    return gradients[category] || gradients.milestone;
+    return backgrounds[category] || backgrounds.milestone;
   };
 
   const formatUnlockDate = (dateString: string) => {
@@ -57,7 +57,7 @@ const AchievementCard: React.FC<AchievementCardProps> = ({
     });
   };
 
-  const gradientColors = getAchievementGradient(achievement.achievement?.category || 'milestone');
+  const backgroundColor = getAchievementBackground(achievement.achievement?.category || 'milestone');
 
   return (
     <TouchableOpacity
@@ -65,11 +65,8 @@ const AchievementCard: React.FC<AchievementCardProps> = ({
       onPress={onPress}
       activeOpacity={0.8}
     >
-      <LinearGradient
-        colors={gradientColors}
-        style={styles.card}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+      <View
+        style={[styles.card, { backgroundColor }]}
       >
         {/* Achievement Icon */}
         <View style={styles.iconContainer}>
@@ -83,7 +80,7 @@ const AchievementCard: React.FC<AchievementCardProps> = ({
         {/* Achievement Content */}
         <View style={styles.content}>
           <Text style={styles.title}>{achievement.achievement?.name}</Text>
-          <Text style={styles.description}>{achievement.achievement?.description}</Text>
+          <Text style={styles.description} numberOfLines={2}>{achievement.achievement?.description}</Text>
           
           {/* Aura Reward */}
           <View style={styles.auraReward}>
@@ -102,7 +99,7 @@ const AchievementCard: React.FC<AchievementCardProps> = ({
             <Text style={styles.shareButtonText}>📸 Share</Text>
           </TouchableOpacity>
         )}
-      </LinearGradient>
+      </View>
     </TouchableOpacity>
   );
 };
@@ -113,76 +110,84 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
   card: {
-    width: 160,
+    width: 140,
+    height: 260, // Further increased height to prevent any overlapping
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 24,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 8,
     },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
   },
   iconContainer: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 12,
   },
   icon: {
-    width: 32,
-    height: 32,
+    width: 24,
+    height: 24,
   },
   content: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
   },
   title: {
-    fontSize: 14,
+    fontSize: 16,
+    fontFamily: 'Poppins-Bold',
     fontWeight: 'bold',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 6,
-    lineHeight: 18,
+    color: '#1B1B1F',
+    textAlign: 'left',
+    marginBottom: 10,
+    lineHeight: 20,
   },
   description: {
-    fontSize: 11,
-    color: '#FFFFFF',
-    textAlign: 'center',
-    marginBottom: 8,
-    lineHeight: 14,
-    opacity: 0.9,
+    fontSize: 12,
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A',
+    textAlign: 'left',
+    marginBottom: 14,
+    lineHeight: 16,
   },
   auraReward: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(255, 111, 76, 0.1)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
-    marginBottom: 8,
+    marginBottom: 14,
+    alignSelf: 'flex-start',
   },
   auraRewardText: {
     fontSize: 12,
+    fontFamily: 'Poppins-SemiBold',
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: '#FF6F4C',
   },
   unlockDate: {
     fontSize: 10,
-    color: '#FFFFFF',
-    opacity: 0.8,
-    textAlign: 'center',
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A',
+    textAlign: 'left',
+    marginBottom: 16,
   },
   shareButton: {
-    marginTop: 8,
-    paddingVertical: 6,
+    marginTop: 16, // Fixed spacing instead of auto
+    paddingVertical: 8,
     paddingHorizontal: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(27, 27, 31, 0.1)',
     borderRadius: 12,
     alignItems: 'center',
+    alignSelf: 'flex-start',
   },
   shareButtonText: {
     fontSize: 11,
+    fontFamily: 'Poppins-SemiBold',
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: '#1B1B1F',
   },
 });
 

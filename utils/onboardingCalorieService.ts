@@ -153,14 +153,14 @@ export async function calculateAndStoreCalories(profile: UserProfileCalorieData)
       .eq('id', profile.id);
 
     if (updateError) {
-      console.error('Error updating calorie data:', updateError);
+      
       return {
         success: false,
         error: `Failed to save calorie data: ${updateError.message}`
       };
     }
 
-    console.log('Successfully calculated and stored calorie data:', calorieResults);
+    
 
     return {
       success: true,
@@ -174,7 +174,7 @@ export async function calculateAndStoreCalories(profile: UserProfileCalorieData)
     };
 
   } catch (error) {
-    console.error('Error calculating and storing calories:', error);
+    
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred'
@@ -221,7 +221,7 @@ export async function getUserCalorieData(userId: string): Promise<{
     };
 
   } catch (error) {
-    console.error('Error retrieving calorie data:', error);
+    
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred'
@@ -257,7 +257,7 @@ export async function ensureUserHasCalorieData(userId: string): Promise<{
 
     // Check if calorie data already exists and is complete
     if (profile.bmr && profile.tdee && profile.target_calories) {
-      console.log('Calorie data already exists, skipping calculation');
+      
       return {
         success: true,
         data: {
@@ -270,7 +270,7 @@ export async function ensureUserHasCalorieData(userId: string): Promise<{
 
     // Check if we have all required data for calculation
     if (!hasRequiredCalorieData(profile)) {
-      console.log('Required data not yet available for calorie calculation');
+      
       return {
         success: false,
         error: 'Required data not yet available for calorie calculation'
@@ -278,7 +278,7 @@ export async function ensureUserHasCalorieData(userId: string): Promise<{
     }
 
     // Calculate and store calorie data if missing
-    console.log('Calculating calorie data for user:', userId);
+    
     const result = await calculateAndStoreCalories(profile as UserProfileCalorieData);
 
     if (!result.success || !result.data) {
@@ -291,7 +291,7 @@ export async function ensureUserHasCalorieData(userId: string): Promise<{
     };
 
   } catch (error) {
-    console.error('Error ensuring calorie data:', error);
+    
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred'

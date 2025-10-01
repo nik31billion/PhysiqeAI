@@ -118,7 +118,7 @@ const OnboardingScreen9: React.FC = () => {
          setSelectedCharacter(null);
        }
     } catch (error) {
-      console.error('Error picking image:', error);
+      
       Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
   };
@@ -155,7 +155,7 @@ const OnboardingScreen9: React.FC = () => {
      const success = await navigateToNextStep(9, physiqueData);
      
      if (!success) {
-       console.error('Failed to save onboarding data');
+       
      }
    };
 

@@ -27,10 +27,10 @@ export function useDailyAura(userId: string | null): UseDailyAuraReturn {
       
       // Check for missed activities (run in background)
       checkMissedActivities(userId).catch(error => {
-        console.error('Error checking missed activities:', error);
+        
       });
     } catch (error) {
-      console.error('Error handling app open:', error);
+      
     }
   }, [userId]);
 
@@ -43,7 +43,7 @@ export function useDailyAura(userId: string | null): UseDailyAuraReturn {
       const { handlePlanTweakRequest } = await import('./dailyAuraService');
       return await handlePlanTweakRequest(userId);
     } catch (error) {
-      console.error('Error handling plan tweak:', error);
+      
       return { success: false, error: 'Failed to handle plan tweak' };
     }
   }, [userId]);
@@ -57,7 +57,7 @@ export function useDailyAura(userId: string | null): UseDailyAuraReturn {
       const { handleFriendReferral } = await import('./dailyAuraService');
       return await handleFriendReferral(userId, referredUserId);
     } catch (error) {
-      console.error('Error handling referral:', error);
+      
       return { success: false, error: 'Failed to handle referral' };
     }
   }, [userId]);
@@ -68,7 +68,7 @@ export function useDailyAura(userId: string | null): UseDailyAuraReturn {
     try {
       await performDailyMaintenance(userId);
     } catch (error) {
-      console.error('Error performing maintenance:', error);
+      
     }
   }, [userId]);
 

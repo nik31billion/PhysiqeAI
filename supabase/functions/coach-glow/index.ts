@@ -58,74 +58,86 @@ interface CoachGlowRequest {
 interface CoachGlowResponse {
   success: boolean
   response: string
-  intent: 'motivation' | 'plan_swap' | 'general'
-  action_required?: {
-    type: 'meal_swap' | 'workout_swap' | 'plan_update'
-    data?: any
-  }
+  intent: 'coach' // Simplified - Gemini handles all intents naturally
   error?: string
 }
 
-// Intent Detection Keywords
-const MOTIVATION_KEYWORDS = [
-  'motivated', 'motivation', 'unmotivated', 'quitting', 'give up', 'struggling',
-  'hard', 'difficult', 'tired', 'exhausted', 'burned out', 'frustrated',
-  'progress', 'stuck', 'plateau', 'losing', 'gained weight', 'missed workout',
-  'skipped', 'cheat day', 'binge', 'fell off', 'consistency', 'streak',
-  'encourage', 'support', 'help', 'advice', 'tips', 'stuck', 'cheating',
-  'cheat', 'habit', 'bad habit', 'guilty', 'feel bad', 'disappointed'
-]
-
-const PLAN_SWAP_KEYWORDS = [
-  'change', 'swap', 'replace', 'different', 'instead', 'modify', 'update',
-  'don\'t like', 'hate', 'dislike', 'boring', 'tired of', 'new', 'alternative',
-  'give me', 'suggest', 'recommend', 'can i have', 'i want', 'i need'
-]
-
-const MEAL_INFO_KEYWORDS = [
-  'what is', 'tell me about', 'explain', 'describe', 'details about', 'info about',
-  'this meal', 'my meal', 'current meal', 'today\'s meal', 'understand', 'can\'t understand'
-]
+// Remove all keyword-based intent detection - let Gemini handle context naturally
 
 /**
- * Analyzes user message to determine intent
+ * Validates user message for edge cases
  */
-function detectIntent(message: string): 'motivation' | 'plan_swap' | 'general' {
-  const lowerMessage = message.toLowerCase()
-  
-  // Check for motivation keywords first (highest priority)
-  const hasMotivationKeywords = MOTIVATION_KEYWORDS.some(keyword => 
-    lowerMessage.includes(keyword)
-  )
-  
-  // Check for meal info keywords (should be general, not plan swap)
-  const hasMealInfoKeywords = MEAL_INFO_KEYWORDS.some(keyword => 
-    lowerMessage.includes(keyword)
-  )
-  
-  // Check for plan swap keywords (only if not asking for info)
-  const hasSwapKeywords = PLAN_SWAP_KEYWORDS.some(keyword => 
-    lowerMessage.includes(keyword)
-  )
-  
-  // Priority order: motivation > meal info (general) > plan swap
-  if (hasMotivationKeywords) {
-    return 'motivation'
+function validateUserMessage(message: string): { isValid: boolean; issue?: string; sanitizedMessage?: string } {
+  // Check for empty or extremely short messages
+  if (!message || message.trim().length === 0) {
+    return { isValid: false, issue: 'Empty message' }
   }
   
-  if (hasMealInfoKeywords) {
-    return 'general'
+  if (message.trim().length < 2) {
+    return { isValid: false, issue: 'Message too short' }
   }
   
-  if (hasSwapKeywords) {
-    return 'plan_swap'
+  // Check for extremely long messages (potential spam or abuse)
+  if (message.length > 2000) {
+    return { isValid: false, issue: 'Message too long' }
   }
   
-  return 'general'
+  // Check for repetitive characters or spam-like behavior
+  const hasRepetitiveChars = /(.)\1{10,}/.test(message) // same character 10+ times
+  const hasExcessiveCaps = message.replace(/[^A-Z]/g, '').length > message.length * 0.8 && message.length > 20
+  
+  if (hasRepetitiveChars || hasExcessiveCaps) {
+    return { isValid: false, issue: 'Spam-like behavior detected' }
+  }
+  
+  // Sanitize message (remove excessive whitespace, normalize)
+  const sanitizedMessage = message
+    .trim()
+    .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+    .replace(/[^\w\s.,!?'-]/gi, '') // Remove special characters except basic punctuation
+  
+  return { isValid: true, sanitizedMessage }
+}
+
+// No more intent detection - let Gemini naturally understand the context and respond appropriately
+
+/**
+ * Checks for rate limiting to prevent spam/abuse
+ */
+async function checkRateLimit(supabase: any, userId: string): Promise<{ allowed: boolean; waitTime?: number }> {
+  try {
+    // Get user's recent message count in the last minute
+    const oneMinuteAgo = new Date(Date.now() - 60000).toISOString()
+    
+    const { data, error } = await supabase
+      .from('coach_glow_chats')
+      .select('created_at')
+      .eq('user_id', userId)
+      .gte('created_at', oneMinuteAgo)
+    
+    if (error) {
+      console.log('Rate limit check failed, allowing request:', error.message)
+      return { allowed: true }
+    }
+    
+    const recentMessageCount = data?.length || 0
+    const maxMessagesPerMinute = 10 // Reasonable limit
+    
+    if (recentMessageCount >= maxMessagesPerMinute) {
+      const waitTime = 60 // seconds to wait
+      console.log(`Rate limit exceeded for user ${userId}: ${recentMessageCount} messages in last minute`)
+      return { allowed: false, waitTime }
+    }
+    
+    return { allowed: true }
+  } catch (error) {
+    console.log('Rate limit check error, allowing request:', error)
+    return { allowed: true }
+  }
 }
 
 /**
- * Extracts user profile data from database
+ * Extracts user profile data from database with better error handling
  */
 async function getUserProfile(supabase: any, userId: string): Promise<UserProfile> {
   const { data: userData, error } = await supabase
@@ -134,7 +146,7 @@ async function getUserProfile(supabase: any, userId: string): Promise<UserProfil
       id, age, gender, height_cm, weight_kg, target_weight_kg, target_timeline_weeks,
       fitness_experience, activity_level, dietary_preferences, meal_frequency,
       allergies, medical_conditions, physique_inspiration, preferred_workout_time,
-      primary_goal, fitness_goal
+      primary_goal, fitness_goal, target_calories
     `)
     .eq('id', userId)
     .single()
@@ -143,26 +155,40 @@ async function getUserProfile(supabase: any, userId: string): Promise<UserProfil
     throw new Error(`Failed to fetch user profile: ${error?.message || 'User not found'}`)
   }
 
-  return {
+  // Validate and provide sensible defaults for essential fields
+  const currentWeight = Math.max(30, Math.min(300, userData.weight_kg || 70))
+  const targetWeight = Math.max(30, Math.min(300, userData.target_weight_kg || currentWeight))
+  
+  const profile: UserProfile = {
     id: userData.id,
-    age: userData.age,
-    gender: userData.gender,
-    height_cm: userData.height_cm,
-    weight_kg: userData.weight_kg,
-    target_weight_kg: userData.target_weight_kg,
-    target_timeline_weeks: userData.target_timeline_weeks,
-    fitness_experience: userData.fitness_experience,
-    activity_level: userData.activity_level,
-    dietary_preferences: userData.dietary_preferences,
-    meal_frequency: userData.meal_frequency,
-    allergies: userData.allergies || [],
-    medical_conditions: userData.medical_conditions || [],
+    age: Math.max(13, Math.min(100, userData.age || 25)), // Age between 13-100, default 25
+    gender: userData.gender || 'Not specified',
+    height_cm: Math.max(100, Math.min(250, userData.height_cm || 170)), // Height between 100-250cm, default 170
+    weight_kg: currentWeight, // Current/starting weight
+    target_weight_kg: targetWeight, // Goal/target weight
+    target_timeline_weeks: Math.max(1, Math.min(104, userData.target_timeline_weeks || 12)), // 1-104 weeks, default 12
+    fitness_experience: userData.fitness_experience || 'Beginner',
+    activity_level: userData.activity_level || 'Moderate',
+    dietary_preferences: userData.dietary_preferences || 'No specific preference',
+    meal_frequency: userData.meal_frequency || '3 meals + snacks',
+    allergies: Array.isArray(userData.allergies) ? userData.allergies : [],
+    medical_conditions: Array.isArray(userData.medical_conditions) ? userData.medical_conditions : [],
     physique_inspiration: userData.physique_inspiration || '',
-    preferred_workout_time: userData.preferred_workout_time || '',
-    target_calories: userData.target_calories || 2000,
-    primary_goal: userData.primary_goal || '',
-    fitness_goal: userData.fitness_goal || ''
+    preferred_workout_time: userData.preferred_workout_time || 'Flexible',
+    target_calories: Math.max(1200, Math.min(5000, userData.target_calories || 2000)), // 1200-5000 calories, default 2000
+    primary_goal: userData.primary_goal || 'General fitness',
+    fitness_goal: userData.fitness_goal || 'Stay healthy'
   }
+
+  // Log weight data for debugging hallucinations
+  console.log(`Coach Glow: User ${userId} weight data - Current: ${currentWeight}kg, Target: ${targetWeight}kg, Direction: ${targetWeight > currentWeight ? 'GAIN' : 'LOSE'} (${Math.abs(targetWeight - currentWeight)}kg difference)`)
+
+  // Log if any defaults were used (for debugging)
+  if (!userData.age || !userData.height_cm || !userData.weight_kg) {
+    console.log(`Using default values for user ${userId}: age=${userData.age ? 'provided' : 'default'}, height=${userData.height_cm ? 'provided' : 'default'}, weight=${userData.weight_kg ? 'provided' : 'default'}`)
+  }
+
+  return profile
 }
 
 /**
@@ -236,13 +262,13 @@ async function getRecentConversationHistory(supabase: any, userId: string, limit
       .limit(limit)
 
     if (error) {
-      console.error('Error fetching conversation history:', error)
+      
       return []
     }
 
     return data || []
   } catch (error) {
-    console.error('Error fetching conversation history:', error)
+    
     return []
   }
 }
@@ -270,14 +296,14 @@ function analyzeMealContextFromHistory(conversationHistory: any[], currentMessag
     const mealKeywords = ['breakfast', 'lunch', 'dinner', 'snack']
     for (const mealType of mealKeywords) {
       if (userMessage.includes(mealType) || coachResponse.includes(mealType)) {
-        console.log(`🍽️ Found meal reference in history: ${mealType} from message: "${userMessage}"`)
+        
         return mealType
       }
     }
     
     // Check context from previous messages
     if (chat.context?.mealType) {
-      console.log(`🍽️ Found meal type from context: ${chat.context.mealType}`)
+      
       return chat.context.mealType
     }
   }
@@ -286,200 +312,142 @@ function analyzeMealContextFromHistory(conversationHistory: any[], currentMessag
 }
 
 /**
- * Creates motivation/accountability prompt
+ * Creates comprehensive Coach Glow prompt that handles all scenarios
  */
-function createMotivationPrompt(userProfile: UserProfile, streakData: StreakData, message: string): string {
-  return `You are Coach Glow, a supportive fitness and wellness AI coach. You are empathetic, encouraging, and motivational. You help users stay accountable and motivated on their fitness journey.
-
-**User Profile:**
-- Age: ${userProfile.age}
-- Gender: ${userProfile.gender}
-- Goal: ${userProfile.primary_goal} (${userProfile.fitness_goal})
-- Current Weight: ${userProfile.weight_kg}kg
-- Target Weight: ${userProfile.target_weight_kg}kg
-- Timeline: ${userProfile.target_timeline_weeks} weeks
-- Fitness Level: ${userProfile.fitness_experience}
-- Activity Level: ${userProfile.activity_level}
-- Dietary Preference: ${userProfile.dietary_preferences}
-
-**Current Progress:**
-- Current Streak: ${streakData.current_streak} days
-- Longest Streak: ${streakData.longest_streak} days
-- Aura Points: ${streakData.aura_points}
-- Total Workouts Completed: ${streakData.total_workouts_completed}
-- Total Meals Completed: ${streakData.total_meals_completed}
-- Last Workout: ${streakData.last_workout_date || 'No recent workouts'}
-- Last Meal Completion: ${streakData.last_meal_completion || 'No recent meals'}
-
-**User Message:** "${message}"
-
-**Instructions:**
-- Respond with empathy and understanding
-- Provide actionable advice and encouragement
-- Acknowledge their progress and achievements
-- Help them overcome obstacles
-- Keep responses conversational and supportive
-- Do not mention being an AI
-- Keep response under 200 words
-- Use their name or "champion" to personalize
-
-Respond as Coach Glow:`
-}
-
-/**
- * Creates plan swap prompt
- */
-function createPlanSwapPrompt(userProfile: UserProfile, planData: PlanData, message: string, context?: any, conversationHistory?: any[]): string {
+function createCoachPrompt(userProfile: UserProfile, streakData: StreakData, planData: PlanData | null, message: string, conversationHistory: any[], context?: any): string {
   const currentDay = context?.currentDay || getCurrentDay()
-  const mealType = context?.mealType || 'meal'
-  const workoutType = context?.workoutType || 'workout'
-
-  // Extract relevant plan section with better meal detection
-  let relevantPlan = ''
-  let allMealsInfo = ''
   
-  if (mealType !== 'workout') {
-    const dayPlan = planData.diet_plan.find((day: any) => 
-      day.day.toLowerCase() === currentDay.toLowerCase()
-    )
-    
-    if (dayPlan) {
-      // First, try to find the specific meal mentioned in the message
-      const messageLower = message.toLowerCase()
-      let specificMeal = null
-      
-      // Look for meal type keywords in the message
-      const mealKeywords = ['breakfast', 'lunch', 'dinner', 'snack', 'meal']
-      for (const keyword of mealKeywords) {
-        if (messageLower.includes(keyword)) {
-          specificMeal = dayPlan.meals.find((m: any) => 
-            m.meal.toLowerCase().includes(keyword)
-          )
-          if (specificMeal) break
-        }
-      }
-      
-      // If no specific meal found, use the context mealType
-      if (!specificMeal) {
-        specificMeal = dayPlan.meals.find((m: any) => 
-          m.meal.toLowerCase().includes(mealType.toLowerCase())
-        )
-      }
-      
-      if (specificMeal) {
-        const meal = specificMeal as any
-        relevantPlan = `Current ${meal.meal}: ${meal.description} (${meal.kcal} kcal)`
-        if (meal.protein_g) relevantPlan += ` | Protein: ${meal.protein_g}g`
-        if (meal.carbs_g) relevantPlan += ` | Carbs: ${meal.carbs_g}g`
-        if (meal.fat_g) relevantPlan += ` | Fat: ${meal.fat_g}g`
-        if (meal.ingredients) relevantPlan += ` | Ingredients: ${meal.ingredients.join(', ')}`
-      }
-      
-      // Also provide all meals for context
-      allMealsInfo = `\n\n**All meals for ${currentDay}:**\n`
-      dayPlan.meals.forEach((meal: any) => {
-        allMealsInfo += `- ${meal.meal}: ${meal.description} (${meal.kcal} kcal)`
-        if (meal.protein_g) allMealsInfo += ` | Protein: ${meal.protein_g}g`
-        if (meal.carbs_g) allMealsInfo += ` | Carbs: ${meal.carbs_g}g`
-        if (meal.fat_g) allMealsInfo += ` | Fat: ${meal.fat_g}g`
-        allMealsInfo += '\n'
-      })
-    }
-  } else {
-    const dayPlan = planData.workout_plan.find((day: any) => 
-      day.day.toLowerCase() === currentDay.toLowerCase()
-    )
-    if (dayPlan) {
-      relevantPlan = `Current workout: ${JSON.stringify(dayPlan.routine)}`
-    }
-  }
-
-  // Build conversation context
+  // Build conversation context - include more messages for better context
   let conversationContext = ''
   if (conversationHistory && conversationHistory.length > 0) {
-    conversationContext = '\n\n**Recent Conversation Context:**\n'
-    conversationHistory.slice(0, 3).forEach((chat, index) => {
-      conversationContext += `User: "${chat.user_message}"\n`
-      conversationContext += `Coach: "${chat.coach_response}"\n\n`
+    conversationContext = '\n\nRecent conversation:\n'
+    conversationHistory.slice(-8).forEach((chat) => {
+      conversationContext += `You: "${chat.user_message}"\nCoach: "${chat.coach_response}"\n\n`
     })
   }
 
-  return `You are Coach Glow, a fitness and nutrition expert. Help users modify their meal or workout plans while maintaining their goals.
+  // Build plan context if available
+  let planContext = ''
+  if (planData) {
+    const dayPlan = planData.diet_plan?.find((day: any) => 
+      day.day.toLowerCase() === currentDay.toLowerCase()
+    )
+    if (dayPlan) {
+      planContext = `\n\nToday's meals (${currentDay}):\n`
+      dayPlan.meals.forEach((meal: any) => {
+        planContext += `• ${meal.meal}: ${meal.description} (${meal.kcal} kcal)\n`
+      })
+    }
 
-**User Profile:**
-- Age: ${userProfile.age}
-- Gender: ${userProfile.gender}
-- Goal: ${userProfile.primary_goal} (${userProfile.fitness_goal})
-- Dietary Preference: ${userProfile.dietary_preferences}
-- Allergies: ${userProfile.allergies.join(', ') || 'None'}
-- Target Calories: ${userProfile.target_calories} kcal/day
-- Fitness Level: ${userProfile.fitness_experience}
-- Activity Level: ${userProfile.activity_level}
+    const workoutPlan = planData.workout_plan?.find((day: any) => 
+      day.day.toLowerCase() === currentDay.toLowerCase()
+    )
+    if (workoutPlan) {
+      planContext += `\n\nToday's workout: ${workoutPlan.routine?.map((ex: any) => ex.name || ex.exercise).join(', ') || 'Rest day'}\n`
+    }
+  }
 
-**Current Plan Context:**
-${relevantPlan}${allMealsInfo}${conversationContext}
+  return `You are Coach Glow, a supportive and motivational fitness coach. You help users achieve their fitness goals through encouragement, practical advice, and problem-solving.
 
-**User Request:** "${message}"
+User Profile:
+• Name: Coach calls them "champion" or uses encouraging terms
+• Age: ${userProfile.age}, Gender: ${userProfile.gender}
+• Primary Goal: ${userProfile.primary_goal} (${userProfile.fitness_goal})
+• Current Weight: ${userProfile.weight_kg}kg → Goal Weight: ${userProfile.target_weight_kg}kg
+• Weight Journey: ${userProfile.target_weight_kg > userProfile.weight_kg ? 'GAINING WEIGHT' : 'LOSING WEIGHT'} (${Math.abs(userProfile.target_weight_kg - userProfile.weight_kg)}kg to go)
+• Timeline: ${userProfile.target_timeline_weeks} weeks
+• Fitness Level: ${userProfile.fitness_experience}
+• Activity Level: ${userProfile.activity_level}
+• Diet: ${userProfile.dietary_preferences}
+• Target Calories: ${userProfile.target_calories} kcal/day
+• Allergies: ${userProfile.allergies.join(', ') || 'None'}
 
-**Instructions:**
-- CRITICAL: Use the conversation history to understand what meal the user is referring to when they say "this meal", "that meal", "it", "update it", "apply it", etc.
-- If the user is asking about a specific meal (like "what is this meal" or "tell me about my snack"), provide detailed information about that meal including calories, macros, and ingredients. DO NOT suggest alternatives unless explicitly requested.
-- If requesting meal change: Suggest a replacement meal that matches calories/macros and dietary preferences
-- If requesting workout change: Suggest alternative exercises matching their fitness level
-- ALWAYS reference the specific meal the user is asking about based on conversation context - do not confuse different meals
-- Only suggest alternatives when the user explicitly asks for changes, swaps, or alternatives
-- Ensure suggestions align with their goals and constraints
-- Provide specific details (ingredients, instructions, or exercise form)
-- Keep response focused and actionable
-- Do not mention being an AI
-- When suggesting updates, make sure you're referring to the correct meal from the conversation history
+Current Progress:
+• Current Streak: ${streakData.current_streak} days
+• Longest Streak: ${streakData.longest_streak} days
+• Total Workouts: ${streakData.total_workouts_completed}
+• Total Meals Completed: ${streakData.total_meals_completed}${planContext}${conversationContext}
 
-**IMPORTANT FOR MEAL SUGGESTIONS:**
-When suggesting a meal replacement, format your response as:
-Meal: [meal name]
-Description: [detailed description]
-Calories: [number] kcal
-Protein: [number]g
-Carbs: [number]g
-Fat: [number]g
-Ingredients: [comma-separated list]
+User Message: "${message}"
 
-Respond with the specific information or replacement:`
+COACHING GUIDELINES:
+• BE MOTIVATIONAL: When users express doubts, lack of motivation, or problems with workouts/meals - actively coach and encourage them
+• PROBLEM-SOLVING: If they don't want to workout, suggest alternatives, remind them of goals, provide motivation
+• USE CONTEXT: ALWAYS reference the conversation history above. If user says "ok yeah do that" or similar, refer back to what was discussed in the recent conversation
+• BE SUPPORTIVE: Acknowledge struggles but help them move forward with practical solutions
+• MAINTAIN CONTEXT: Remember what you suggested in previous messages and what the user agreed to or asked for
+• MEAL/WORKOUT SUGGESTIONS: When suggesting meal or workout changes, provide COMPLETE details:
+  - For meals: Include exact calories, protein/carbs/fat grams, ingredients, and preparation instructions
+  - For workouts: Match the workout type (full body, push day, pull day, etc.) and include sets/reps/rest
+• RESPONSE LENGTH: Match the need - brief for simple questions (2-3 lines), longer for suggestions (5-10 lines)
+• NEVER claim weight progress without actual data - their goal weight is TARGET, not achievement
+• Don't use excessive formatting - keep it conversational and natural
+• Don't say "Coach Glow here" - just respond as their supportive coach
+
+Examples of good responses:
+- User: "I don't want to workout" → Motivate them, remind them of goals, suggest easier alternatives
+- User: "Thanks" → "You're welcome! Anything else I can help with?"
+- User: "What's this meal?" → Explain the meal from their plan with calories/macros
+- User: "Can I change my breakfast?" → Provide complete alternative with calories, macros, ingredients, and prep
+- User: "ok yeah do that" → Reference what was discussed in recent conversation and proceed with that suggestion
+
+Respond as their encouraging, solution-focused fitness coach:`
 }
 
+// Removed old complex prompt functions - using single comprehensive coach prompt
+
+// Removed all old prompt functions - using single comprehensive createCoachPrompt
+
 /**
- * Creates general fitness query prompt
+ * Validates and cleans AI-generated responses
  */
-function createGeneralPrompt(userProfile: UserProfile, message: string): string {
-  return `You are Coach Glow, a trusted fitness and nutrition expert. Answer user questions with personalized advice based on their profile.
-
-**User Profile:**
-- Age: ${userProfile.age}
-- Gender: ${userProfile.gender}
-- Goal: ${userProfile.primary_goal} (${userProfile.fitness_goal})
-- Current Weight: ${userProfile.weight_kg}kg
-- Target Weight: ${userProfile.target_weight_kg}kg
-- Timeline: ${userProfile.target_timeline_weeks} weeks
-- Fitness Level: ${userProfile.fitness_experience}
-- Activity Level: ${userProfile.activity_level}
-- Dietary Preference: ${userProfile.dietary_preferences}
-- Allergies: ${userProfile.allergies.join(', ') || 'None'}
-
-**User Question:** "${message}"
-
-**Instructions:**
-- Provide clear, accurate, and personalized advice
-- Consider their specific goals, fitness level, and dietary preferences
-- Keep responses conversational and friendly
-- Provide actionable tips when appropriate
-- Do not mention being an AI
-- Keep response under 300 words
-
-Respond as Coach Glow:`
+function validateAndCleanResponse(response: string): string {
+  // Check for empty or extremely short responses
+  if (!response || response.length < 10) {
+    return "I'm here to help! Could you please rephrase your question? I want to make sure I give you the best guidance possible."
+  }
+  
+  // Check for extremely long responses (likely hallucination or error)
+  if (response.length > 5000) {
+    return response.substring(0, 4500) + "... Let me know if you need more specific information about any part of this!"
+  }
+  
+  // Check for AI self-references and clean them
+  const aiReferences = [
+    /as an ai/gi,
+    /i am an ai/gi,
+    /i'm an ai/gi,
+    /artificial intelligence/gi,
+    /language model/gi,
+    /trained by/gi,
+    /created by/gi
+  ]
+  
+  let cleanedResponse = response
+  aiReferences.forEach(pattern => {
+    cleanedResponse = cleanedResponse.replace(pattern, '')
+  })
+  
+  // Remove "Coach Glow here!" as it's redundant - user already knows who's responding
+  cleanedResponse = cleanedResponse.replace(/^Coach Glow here!\s*/i, '')
+  
+  // Remove all star/asterisk formatting to prevent ** text ** appearance
+  cleanedResponse = cleanedResponse.replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
+  
+  // Remove bullet points and formatting symbols
+  cleanedResponse = cleanedResponse.replace(/^[•*-]\s*/gm, '')
+  
+  // Clean up excessive spacing and line breaks
+  cleanedResponse = cleanedResponse.replace(/\n\s*\n/g, '\n').trim()
+  
+  // Allow longer responses for detailed meal/workout suggestions
+  // No artificial line limits - let CoachGlow provide complete information
+  
+  return cleanedResponse.trim()
 }
 
 /**
- * Calls Gemini API with the constructed prompt
+ * Calls Gemini API with the constructed prompt - tries multiple model versions for reliability
  */
 async function callGeminiAPI(prompt: string): Promise<string> {
   const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')
@@ -487,47 +455,78 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     throw new Error('GEMINI_API_KEY environment variable is not set')
   }
 
-  console.log('🤖 Calling Gemini API for Coach Glow response')
+  // Use FASTEST proven models - prioritize speed over newest version
+  // Based on testing: gemini-2.0-flash responded instantly
+  const modelVersions = [
+    'gemini-2.0-flash',        // ✅ FASTEST - Instant response
+    'gemini-flash-latest',     // ✅ FAST - Good response time
+    'gemini-2.5-flash',        // ✅ Works but slower - fallback only
+  ];
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: prompt
-          }]
-        }],
-        generationConfig: {
-          temperature: 0.8,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 1024,
+  let lastError: Error | null = null;
+
+  for (const model of modelVersions) {
+    try {
+      console.log(`Coach Glow: Attempting to call ${model}...`);
+      
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: prompt
+              }]
+            }],
+            generationConfig: {
+              temperature: 0.8,
+              topK: 40,
+              topP: 0.95,
+              maxOutputTokens: 600, // Balanced limit for detailed responses without timeouts
+            }
+          })
         }
-      })
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        const errorMessage = `${model} API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`
+        console.log(`Coach Glow: ${errorMessage}`)
+        lastError = new Error(errorMessage)
+        continue // Try next model
+      }
+
+      console.log(`Coach Glow: Successfully connected to ${model}`)
+      const data = await response.json()
+
+      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+        const errorMessage = `Invalid response from ${model} API`
+        console.log(`Coach Glow: ${errorMessage}`)
+        lastError = new Error(errorMessage)
+        continue // Try next model
+      }
+
+      const generatedText = data.candidates[0].content.parts[0].text
+      console.log(`Coach Glow: ${model} generated response successfully`)
+      console.log(`Coach Glow: Response length: ${generatedText.length} characters`)
+      
+      // Validate the generated response for appropriateness
+      const cleanedResponse = validateAndCleanResponse(generatedText.trim())
+      return cleanedResponse
+      
+    } catch (error) {
+      console.log(`Coach Glow: Error with ${model}:`, error.message)
+      lastError = error instanceof Error ? error : new Error(String(error))
+      continue // Try next model
     }
-  )
-
-  if (!response.ok) {
-    const errorData = await response.json()
-    console.error('❌ Gemini API error:', errorData)
-    throw new Error(`Gemini API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`)
   }
 
-  const data = await response.json()
-
-  if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
-    throw new Error('Invalid response from Gemini API')
-  }
-
-  const generatedText = data.candidates[0].content.parts[0].text
-  console.log('✅ Coach Glow response generated successfully')
-
-  return generatedText.trim()
+  // If all models failed, throw the last error
+  throw lastError || new Error('All Gemini model versions failed')
 }
 
 /**
@@ -638,9 +637,9 @@ async function updateUserPlan(
       .eq('user_id', userId)
       .eq('is_active', true)
 
-    console.log(`✅ Updated ${planSection.type} for user ${userId}`)
+    
   } catch (error) {
-    console.error('Failed to update user plan:', error)
+    
     throw error
   }
 }
@@ -670,7 +669,7 @@ async function logChatInteraction(
         created_at: new Date().toISOString()
       })
   } catch (error) {
-    console.error('Failed to log chat interaction:', error)
+    
     // Don't throw error as this is not critical
   }
 }
@@ -679,6 +678,7 @@ async function logChatInteraction(
  * Main Coach Glow handler
  */
 serve(async (req) => {
+  console.log(`Coach Glow: Received ${req.method} request`)
   try {
     // Handle CORS
     if (req.method === 'OPTIONS') {
@@ -725,123 +725,105 @@ serve(async (req) => {
       )
     }
 
-    console.log(`💬 Coach Glow request from user ${userId}: "${message}"`)
+    // Validate user message
+    const validation = validateUserMessage(message)
+    if (!validation.isValid) {
+      console.log(`Message validation failed for user ${userId}: ${validation.issue}`)
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: validation.issue === 'Spam-like behavior detected' 
+            ? "I'm here to help with your fitness and nutrition goals! Let's focus on that."
+            : "Please provide a clear message so I can assist you better.",
+          intent: 'general'
+        }),
+        {
+          status: 400,
+          headers: { 
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          },
+        }
+      )
+    }
 
-    // Get recent conversation history if not provided
-    let recentHistory = conversationHistory || await getRecentConversationHistory(supabase, userId, 5)
+    // Check rate limiting
+    const rateLimitCheck = await checkRateLimit(supabase, userId)
+    if (!rateLimitCheck.allowed) {
+      console.log(`Rate limit exceeded for user ${userId}`)
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Please wait ${rateLimitCheck.waitTime} seconds before sending another message. This helps me provide better responses!`,
+          intent: 'general'
+        }),
+        {
+          status: 429, // Too Many Requests
+          headers: { 
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+            'Retry-After': rateLimitCheck.waitTime?.toString() || '60'
+          },
+        }
+      )
+    }
 
-    // Detect intent
-    const intent = detectIntent(message)
-    console.log(`🎯 Detected intent: ${intent}`)
+    // Use sanitized message
+    const sanitizedMessage = validation.sanitizedMessage || message
+
+    
+
+    // Get recent conversation history if not provided - increase to 10 messages for better context
+    let recentHistory = conversationHistory || await getRecentConversationHistory(supabase, userId, 10)
+    console.log(`Coach Glow: Conversation history length: ${recentHistory.length}`)
+    if (recentHistory.length > 0) {
+      console.log(`Coach Glow: Last user message: "${recentHistory[recentHistory.length - 1]?.user_message}"`)
+      console.log(`Coach Glow: Last coach response: "${recentHistory[recentHistory.length - 1]?.coach_response}"`)
+    }
+
+    // No more intent detection - let Gemini handle everything naturally
+    const intent = 'coach' // Simplified
 
     // Get user profile
     const userProfile = await getUserProfile(supabase, userId)
 
-    // Get streak data for motivation context
+    // Get streak data for context
     const streakData = await getStreakData(supabase, userId)
 
-    // Get plan data if needed for swaps or meal questions
-    let planData: PlanData | null = null
-    if (intent === 'plan_swap' || intent === 'general') {
-      planData = await getPlanData(supabase, userId, context)
-    }
-
-    // Enhance context based on message content and conversation history for better meal detection
-    let enhancedContext = { ...context }
-    if (planData && (intent === 'plan_swap' || intent === 'general')) {
-      const messageLower = message.toLowerCase()
-      const mealKeywords = ['breakfast', 'lunch', 'dinner', 'snack', 'meal']
-      
-      // First, try to detect meal type from conversation history
-      const mealFromHistory = analyzeMealContextFromHistory(recentHistory, message)
-      if (mealFromHistory) {
-        enhancedContext.mealType = mealFromHistory
-        console.log(`🍽️ Detected meal type from conversation history: ${mealFromHistory}`)
-      } else {
-        // Fallback to detecting from current message
-        for (const keyword of mealKeywords) {
-          if (messageLower.includes(keyword)) {
-            enhancedContext.mealType = keyword
-            break
-          }
-        }
-        
-        // If no specific meal type detected but asking about meals, default to 'meal'
-        if (!enhancedContext.mealType && (messageLower.includes('meal') || messageLower.includes('food') || messageLower.includes('eat'))) {
-          enhancedContext.mealType = 'meal'
-        }
-      }
-    }
+    // Always get plan data for full context
+    const planData = await getPlanData(supabase, userId, context)
 
     // Start timing for response
     const startTime = Date.now()
 
-    // Create appropriate prompt based on intent
-    let prompt: string
-    let planSection: any = null
-    
-    switch (intent) {
-      case 'motivation':
-        prompt = createMotivationPrompt(userProfile, streakData, message)
-        break
-      case 'plan_swap':
-        if (!planData) {
-          throw new Error('No active plan found for user')
-        }
-        planSection = extractRelevantPlanSection(planData, enhancedContext)
-        prompt = createPlanSwapPrompt(userProfile, planData, message, enhancedContext, recentHistory)
-        break
-      case 'general':
-        // If asking about meals, use plan swap prompt for better context
-        if (planData && enhancedContext.mealType) {
-          planSection = extractRelevantPlanSection(planData, enhancedContext)
-          prompt = createPlanSwapPrompt(userProfile, planData, message, enhancedContext, recentHistory)
-        } else {
-          prompt = createGeneralPrompt(userProfile, message)
-        }
-        break
-      default:
-        prompt = createGeneralPrompt(userProfile, message)
-    }
+    // Use single comprehensive prompt that handles all scenarios
+    const prompt = createCoachPrompt(userProfile, streakData, planData, sanitizedMessage, recentHistory, context)
 
     // Call Gemini API
+    console.log(`Coach Glow: Starting API call for user ${userId}`)
     const coachResponse = await callGeminiAPI(prompt)
     const responseTime = Date.now() - startTime
+    console.log(`Coach Glow: API call completed in ${responseTime}ms, response length: ${coachResponse.length}`)
 
-    // Handle plan modifications if this is a swap request
-    let actionRequired: any = undefined
-    if (intent === 'plan_swap' && planSection) {
-      // Only set actionRequired if the response actually contains a suggestion
-      // Check if the response contains words that indicate a suggestion/alternative
-      const responseLower = coachResponse.toLowerCase()
-      const suggestionKeywords = ['suggest', 'recommend', 'alternative', 'instead', 'try', 'replace', 'swap']
-      const hasSuggestion = suggestionKeywords.some(keyword => responseLower.includes(keyword))
-      
-      if (hasSuggestion) {
-        actionRequired = {
-          type: planSection.type === 'meal' ? 'meal_swap' : 'workout_swap',
-          data: {
-            current: planSection.data,
-            suggested: coachResponse,
-            day: planSection.day,
-            mealType: enhancedContext.mealType || planSection.data?.meal || 'meal'
-          }
-        }
-      }
+    // No more action_required - CoachGlow provides complete suggestions directly in response
+
+    // Log the interaction (use original message for logging purposes, but note if it was sanitized)
+    const logContext = { 
+      ...context, 
+      wasSanitized: sanitizedMessage !== message,
+      originalLength: message.length,
+      sanitizedLength: sanitizedMessage.length 
     }
-
-    // Log the interaction
-    await logChatInteraction(supabase, userId, message, coachResponse, intent, context, responseTime)
+    await logChatInteraction(supabase, userId, sanitizedMessage, coachResponse, intent, logContext, responseTime)
 
     // Prepare response
     const response: CoachGlowResponse = {
       success: true,
       response: coachResponse,
-      intent: intent,
-      action_required: actionRequired
+      intent: intent
     }
 
-    console.log(`✅ Coach Glow response sent successfully`)
+    
 
     return new Response(
       JSON.stringify(response),
@@ -855,12 +837,13 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('❌ Error in Coach Glow function:', error)
+    console.log(`Coach Glow: Error occurred:`, error)
+    console.log(`Coach Glow: Error stack:`, error.stack)
 
     return new Response(
       JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : 'Internal server error'
+        error: 'I encountered an issue while processing your request. Please try again in a moment.'
       }),
       {
         status: 500,
@@ -872,3 +855,4 @@ serve(async (req) => {
     )
   }
 })
+

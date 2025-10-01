@@ -96,7 +96,7 @@ function parseMealResponse(response: string): any {
       ingredients: []
     }
   } catch (error) {
-    console.error('Error parsing meal response:', error)
+    
     // Return safe fallback
     return {
       description: response || 'New meal suggestion',
@@ -139,26 +139,26 @@ async function applyPlanSwap(
     if (swapType === 'meal' && mealType) {
       // Parse the new content to ensure it's structured properly
       const parsedMeal = parseMealResponse(newContent)
-      console.log(`🍽️ Parsed meal data:`, parsedMeal)
+      
       
       // Update meal in diet plan
-      console.log(`🍽️ Looking for ${day} in diet plan...`)
+      
       const dayIndex = updatedPlan.diet_plan.findIndex((dayPlan: any) => 
         dayPlan.day.toLowerCase() === day.toLowerCase()
       )
       
-      console.log(`📅 Found day index: ${dayIndex}`)
+      
       
       if (dayIndex !== -1) {
-        console.log(`🍽️ Looking for meal type "${mealType}" in day's meals...`)
+        
         const mealIndex = updatedPlan.diet_plan[dayIndex].meals.findIndex((meal: any) => 
           meal.meal.toLowerCase().includes(mealType.toLowerCase())
         )
         
-        console.log(`🍽️ Found meal index: ${mealIndex}`)
+        
         
         if (mealIndex !== -1) {
-          console.log(`✅ Updating meal at index ${mealIndex}`)
+          
           // Store original meal data
           const originalMeal = updatedPlan.diet_plan[dayIndex].meals[mealIndex]
           
@@ -178,12 +178,10 @@ async function applyPlanSwap(
           }
           updated = true
         } else {
-          console.log(`❌ Could not find meal with type "${mealType}" in day's meals`)
-          console.log(`📋 Available meals:`, updatedPlan.diet_plan[dayIndex].meals.map((m: any) => m.meal))
+          console.log('Meal not found. Available meals:', updatedPlan.diet_plan[dayIndex]?.meals?.map((m: any) => m.meal))
         }
       } else {
-        console.log(`❌ Could not find day "${day}" in diet plan`)
-        console.log(`📋 Available days:`, updatedPlan.diet_plan.map((d: any) => d.day))
+        console.log('Day not found. Available days:', updatedPlan.diet_plan?.map((d: any) => d.day))
       }
     } else if (swapType === 'workout') {
       // Update workout in workout plan
@@ -221,9 +219,9 @@ async function applyPlanSwap(
       throw new Error(`Failed to update plan: ${updateError.message}`)
     }
 
-    console.log(`✅ Applied ${swapType} swap for user ${userId} on ${day}`)
+    
   } catch (error) {
-    console.error('Failed to apply plan swap:', error)
+    
     throw error
   }
 }
@@ -257,7 +255,7 @@ async function logPlanSwap(
         created_at: new Date().toISOString()
       })
   } catch (error) {
-    console.error('Failed to log plan swap:', error)
+    
     // Don't throw error as this is not critical
   }
 }
@@ -329,8 +327,8 @@ serve(async (req) => {
       )
     }
 
-    console.log(`🔄 Applying ${swapType} swap for user ${userId} on ${day}`)
-    console.log(`📋 Swap details:`, { swapType, day, mealType, newContent })
+    
+    
 
     // Apply the plan swap
     await applyPlanSwap(supabase, userId, swapType, day, mealType, newContent)
@@ -343,7 +341,7 @@ serve(async (req) => {
       message: `Successfully updated ${swapType} for ${day}`
     }
 
-    console.log(`✅ Plan swap applied successfully`)
+    
 
     return new Response(
       JSON.stringify(response),
@@ -357,12 +355,12 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('❌ Error in apply-plan-swap function:', error)
+    
 
     return new Response(
       JSON.stringify({
         success: false,
-        error: error instanceof Error ? error.message : 'Internal server error'
+        error: 'I had trouble updating your plan. Please try again.'
       }),
       {
         status: 500,

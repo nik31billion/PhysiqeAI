@@ -85,7 +85,7 @@ const OnboardingScreen7: React.FC = () => {
     });
     
     if (!success) {
-      console.error('Failed to save onboarding data');
+      
     }
   };
 
@@ -133,10 +133,10 @@ const OnboardingScreen7: React.FC = () => {
               <View style={styles.inputContainer}>
                 <TextInput
                   style={styles.textInput}
-            value={height}
+                  value={height}
                   onChangeText={setHeight}
                   keyboardType="numeric"
-                  placeholder="Enter height"
+                  placeholder="Height"
                   placeholderTextColor="#C7C7CC"
                 />
                 <View style={styles.unitContainer}>
@@ -206,10 +206,10 @@ const OnboardingScreen7: React.FC = () => {
             <View style={styles.inputContainer}>
               <TextInput
                 style={styles.textInput}
-          value={weight}
+                value={weight}
                 onChangeText={setWeight}
                 keyboardType="numeric"
-                placeholder="Enter weight"
+                placeholder="Weight"
                 placeholderTextColor="#C7C7CC"
               />
               <View style={styles.unitContainer}>
@@ -339,6 +339,7 @@ const styles = StyleSheet.create({
     color: '#2D2D2D',
     paddingRight: 15,
     marginRight: 15,
+    minWidth: 0, // Prevents flex item from shrinking below content size
   },
   unitContainer: {
     flexDirection: 'row',

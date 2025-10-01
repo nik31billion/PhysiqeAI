@@ -30,6 +30,7 @@ interface UseCoachGlowReturn {
   sendMessage: (message: string, context?: CoachGlowMessage['context']) => Promise<void>
   applySwap: (swapRequest: ApplySwapRequest) => Promise<void>
   loadChatHistory: () => Promise<void>
+  clearChatHistory: () => void
   clearError: () => void
   
   // Helpers
@@ -63,8 +64,8 @@ export function useCoachGlow({
     setError(null)
 
     try {
-      // Get recent conversation history to provide context
-      const recentHistory = chatHistory.slice(0, 5).map(chat => ({
+      // Get recent conversation history to provide context (last 10 messages)
+      const recentHistory = chatHistory.slice(-10).map(chat => ({
         user_message: chat.user_message,
         coach_response: chat.coach_response,
         intent: chat.intent,
@@ -85,9 +86,9 @@ export function useCoachGlow({
       // This prevents message reordering issues
       
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to send message'
+      const errorMessage = err instanceof Error ? err.message : 'I had trouble connecting. Please try again.'
       setError(errorMessage)
-      console.error('Error sending message to Coach Glow:', err)
+      
     } finally {
       setIsLoading(false)
     }
@@ -110,16 +111,16 @@ export function useCoachGlow({
         await loadChatHistory()
         
         // Refresh user data to reflect the plan changes
-        console.log('🔄 Refreshing user data after successful plan swap...')
+        
         await loadUserData(userId)
       } else {
-        setError(response.error || 'Failed to apply swap')
+        setError(response.error || 'I had trouble updating your plan. Please try again.')
       }
       
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to apply swap'
+      const errorMessage = err instanceof Error ? err.message : 'I had trouble updating your plan. Please try again.'
       setError(errorMessage)
-      console.error('Error applying plan swap:', err)
+      
     } finally {
       setIsApplyingSwap(false)
     }
@@ -133,13 +134,19 @@ export function useCoachGlow({
       setChatHistory(history)
       historyLoaded.current = true
     } catch (err) {
-      console.error('Error loading chat history:', err)
+      
       // Don't set error state for history loading failures
     }
   }, [userId, historyLimit])
 
   const clearError = useCallback(() => {
     setError(null)
+  }, [])
+
+  const clearChatHistory = useCallback(() => {
+    setChatHistory([])
+    setLastResponse(null)
+    historyLoaded.current = false
   }, [])
 
   // Helper functions
@@ -170,6 +177,7 @@ export function useCoachGlow({
     sendMessage,
     applySwap,
     loadChatHistory,
+    clearChatHistory,
     clearError,
     
     // Helpers
@@ -195,7 +203,7 @@ export function useCoachGlowMotivation(userId: string) {
       const history = await getCoachGlowChatHistory(userId, 10)
       return history.filter(chat => chat.intent === 'motivation')
     } catch (error) {
-      console.error('Error getting motivation history:', error)
+      
       return []
     }
   }, [userId])
@@ -245,7 +253,7 @@ export function useCoachGlowPlanSwaps(userId: string) {
     })
     
     // Refresh user data after successful meal swap
-    console.log('🔄 Refreshing user data after meal swap...')
+    
     await loadUserData(userId)
   }, [coachGlow, userId])
 
@@ -261,7 +269,7 @@ export function useCoachGlowPlanSwaps(userId: string) {
     })
     
     // Refresh user data after successful workout swap
-    console.log('🔄 Refreshing user data after workout swap...')
+    
     await loadUserData(userId)
   }, [coachGlow, userId])
 
@@ -270,7 +278,7 @@ export function useCoachGlowPlanSwaps(userId: string) {
       const history = await getCoachGlowChatHistory(userId, 10)
       return history.filter(chat => chat.intent === 'plan_swap')
     } catch (error) {
-      console.error('Error getting swap history:', error)
+      
       return []
     }
   }, [userId])
@@ -300,7 +308,7 @@ export function useCoachGlowGeneral(userId: string) {
       const history = await getCoachGlowChatHistory(userId, 10)
       return history.filter(chat => chat.intent === 'general')
     } catch (error) {
-      console.error('Error getting general history:', error)
+      
       return []
     }
   }, [userId])

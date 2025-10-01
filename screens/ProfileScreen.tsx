@@ -71,7 +71,7 @@ const ProfileScreen: React.FC = () => {
       const photo = await fetchLatestProgressPhoto(user.id);
       setLatestProgressPhoto(photo);
     } catch (error) {
-      console.error('Error loading latest progress photo:', error);
+      
     }
   };
 
@@ -102,15 +102,13 @@ const ProfileScreen: React.FC = () => {
       setEditModalVisible(false);
       Alert.alert('Success', 'Profile updated successfully!');
     } catch (error) {
-      console.error('Error updating profile:', error);
+      
       Alert.alert('Error', 'Failed to update profile. Please try again.');
     }
   };
 
   const handleEditPlan = () => {
-    // TODO: Implement edit plan functionality  
-    // When implemented, add: invalidateCacheForProfile(user?.id || '', 'plan_edit');
-    Alert.alert('Edit Plan', 'Edit Plan functionality coming soon!');
+    navigation.navigate('EditPlanScreen' as never);
   };
 
   const handleUploadPhoto = () => {
@@ -132,7 +130,7 @@ const ProfileScreen: React.FC = () => {
     try {
       await loadLatestProgressPhoto();
     } catch (error) {
-      console.error('Error refreshing data:', error);
+      
     } finally {
       setRefreshing(false);
     }
@@ -156,7 +154,7 @@ const ProfileScreen: React.FC = () => {
               // Navigation will automatically redirect to OnboardingScreen1
               // due to the auth state change handled in AppNavigator
             } catch (error) {
-              console.error('Logout error:', error);
+              
               Alert.alert('Error', 'Failed to logout. Please try again.');
             }
           },
@@ -169,7 +167,7 @@ const ProfileScreen: React.FC = () => {
   if (loading) {
     return (
       <LinearGradient
-        colors={['#e7f8f4', '#fce7e3']}
+        colors={['#F6FCF9', '#F6F8FC']}
         style={styles.container}
       >
         <StatusBar style="dark" />
@@ -185,7 +183,7 @@ const ProfileScreen: React.FC = () => {
   if (error) {
     return (
       <LinearGradient
-        colors={['#e7f8f4', '#fce7e3']}
+        colors={['#F6FCF9', '#F6F8FC']}
         style={styles.container}
       >
         <StatusBar style="dark" />
@@ -207,10 +205,10 @@ const ProfileScreen: React.FC = () => {
   }
 
   return (
-    <LinearGradient
-      colors={['#e7f8f4', '#fce7e3']} // Mint green to peach gradient
-      style={styles.container}
-    >
+      <LinearGradient
+        colors={['#F7F3EE', '#F7F3EE']} // Canvas - same as HomeScreen
+        style={styles.container}
+      >
       <StatusBar style="dark" />
       <ScrollView 
         style={styles.scrollView}
@@ -233,18 +231,14 @@ const ProfileScreen: React.FC = () => {
             <View style={styles.profileInfo}>
               <View style={styles.profileImageContainer}>
                 <Image 
-                  source={require('../assets/mascot/mascot normal no bg.png')} 
+                  source={require('../assets/mascot/flex_aura_new_logo_no_bg_2.png')} 
                   style={styles.profileImage}
                 />
               </View>
               <View style={styles.profileText}>
                 <Text style={styles.name}>{getUserDisplayName(userProfile)}</Text>
                 <View style={styles.subtitleContainer}>
-                  <Text style={styles.subtitle}>Keep vibing! </Text>
-                  <Image 
-                    source={require('../assets/mascot/mascot thumbs up no bg.png')} 
-                    style={styles.mascotEmoji}
-                  />
+                  <Text style={styles.subtitle}>Keep vibing!</Text>
                 </View>
               </View>
             </View>
@@ -347,18 +341,10 @@ const ProfileScreen: React.FC = () => {
           {/* Main Action Buttons */}
           <View style={styles.actionButtons}>
             <TouchableOpacity style={styles.editPlanButton} onPress={handleEditPlan}>
-              <Image
-                source={require('../assets/mascot/mascot normal no bg.png')}
-                style={styles.buttonMascot}
-              />
               <Text style={styles.editPlanButtonText}>Edit Plan</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.uploadPhotoButton} onPress={handleUploadPhoto}>
-              <Image
-                source={require('../assets/mascot/mascot relaxed no bg.png')}
-                style={styles.buttonMascot}
-              />
               <Text style={styles.uploadPhotoButtonText}>Upload Progress Photo</Text>
             </TouchableOpacity>
           </View>
@@ -432,17 +418,17 @@ const styles = StyleSheet.create({
   },
   mainCard: {
     backgroundColor: 'white',
-    borderRadius: 26,
+    borderRadius: 28,
     margin: 20,
-    padding: 30,
+    padding: 24,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 6,
     },
     shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowRadius: 18,
+    elevation: 8,
   },
   
   // Header Section
@@ -458,38 +444,31 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   profileImageContainer: {
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   profileImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#f0f0f0',
+    width: 80,
+    height: 80,
   },
   profileText: {
     marginLeft: 16,
     flex: 1,
   },
   name: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#232323',
-    marginBottom: 2,
+    color: '#1B1B1F', // Ink - same as HomeScreen
+    marginBottom: 6,
   },
   subtitleContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   subtitle: {
-    fontSize: 15,
-    color: '#a2b2b7',
+    fontSize: 14,
+    fontWeight: '400',
+    color: '#6A6A6A', // Ash - same as HomeScreen
   },
   mascotEmoji: {
     width: 22,
@@ -508,17 +487,17 @@ const styles = StyleSheet.create({
   // Profile Details Card
   detailsCard: {
     backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 20,
+    borderRadius: 28,
+    padding: 24,
+    marginBottom: 24,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 6,
     },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 18,
+    elevation: 8,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -532,33 +511,33 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   statLabel: {
-    fontSize: 14,
-    color: '#a2b2b7',
+    fontSize: 12,
+    color: '#6A6A6A', // Ash - same as HomeScreen
     marginBottom: 2,
   },
   statValue: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#232323',
+    color: '#1B1B1F', // Ink - same as HomeScreen
   },
   divider: {
     height: 1,
     backgroundColor: '#f0f0f0',
-    marginBottom: 16,
+    marginBottom: 24,
   },
   planSection: {
     marginBottom: 16,
   },
   currentPlanLabel: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#232323',
+    color: '#1B1B1F', // Ink - same as HomeScreen
     marginBottom: 4,
   },
   currentPlanName: {
-    fontSize: 19,
+    fontSize: 16,
     fontWeight: 'bold',
-    color: '#a2b2b7',
+    color: '#FF6F4C', // Coral accent color - same as HomeScreen
     marginBottom: 12,
   },
   pillsContainer: {
@@ -567,8 +546,8 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   pill: {
-    backgroundColor: '#f8fafd',
-    borderRadius: 16,
+    backgroundColor: '#F0BC2F', // Sun yellow - same as HomeScreen
+    borderRadius: 20, // Pill shape
     paddingHorizontal: 12,
     paddingVertical: 6,
     marginRight: 8,
@@ -576,36 +555,37 @@ const styles = StyleSheet.create({
   },
   pillText: {
     fontSize: 12,
-    color: '#666',
+    color: '#6A6A6A', // Ash - same as HomeScreen
   },
   editProfileButton: {
-    backgroundColor: '#d6fce6',
-    borderRadius: 20,
-    paddingVertical: 12,
+    backgroundColor: '#FF6F4C', // Coral - same as HomeScreen
+    borderRadius: 18,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: 20,
   },
   editProfileButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#232323',
+    color: 'white',
   },
 
 
   // Progress Section
   progressSection: {
-    backgroundColor: '#f8fafd',
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 20,
+    backgroundColor: '#C9F3C5', // Mint tile - same as HomeScreen
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 24,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 6,
     },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 18,
+    elevation: 8,
   },
   progressHeader: {
     flexDirection: 'row',
@@ -614,9 +594,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   progressTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
-    color: '#232323',
+    color: '#1B1B1F', // Ink - same as HomeScreen
   },
   viewProgressButton: {
     flexDirection: 'row',
@@ -644,14 +624,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   progressPhotoDate: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#232323',
+    color: '#6A6A6A', // Ash - same as HomeScreen
     marginBottom: 4,
   },
   progressPhotoNotes: {
     fontSize: 12,
-    color: '#666',
+    color: '#6A6A6A', // Ash - same as HomeScreen
     lineHeight: 16,
   },
   noProgressContainer: {
@@ -659,75 +639,71 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
   },
   noProgressText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#666',
+    color: '#6A6A6A', // Ash - same as HomeScreen
     marginTop: 8,
     marginBottom: 4,
   },
   noProgressSubtext: {
     fontSize: 12,
-    color: '#999',
+    color: '#6A6A6A', // Ash - same as HomeScreen
     textAlign: 'center',
   },
 
   // Action Buttons
   actionButtons: {
-    gap: 14,
+    gap: 16,
   },
   editPlanButton: {
-    backgroundColor: '#ffbb5b',
-    borderRadius: 24,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
+    backgroundColor: '#FF6F4C', // Coral - same as HomeScreen
+    borderRadius: 18,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 48,
+    minHeight: 56,
   },
   uploadPhotoButton: {
-    backgroundColor: '#ece5fb',
-    borderRadius: 24,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
+    backgroundColor: '#C9F3C5', // Mint tile - same as HomeScreen
+    borderRadius: 18,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 48,
+    minHeight: 56,
   },
   buttonMascot: {
-    width: 20,
-    height: 20,
+    width: 32,
+    height: 32,
     marginRight: 12,
   },
   editPlanButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#232323',
+    color: '#FFFFFF', // White on Coral - same as HomeScreen
   },
   uploadPhotoButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#232323',
+    color: '#1B1B1F', // Ink - same as HomeScreen
   },
 
   // Logout Button
   logoutButton: {
-    backgroundColor: '#ffeaea',
-    borderRadius: 20,
-    paddingVertical: 12,
+    backgroundColor: '#FFEEF0', // Very pale pink
+    borderRadius: 18,
+    paddingVertical: 14,
     paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: '#ffcccc',
+    marginTop: 20,
   },
   logoutButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ff6b6b',
+    color: '#ff6b6b', // Red text
     marginLeft: 8,
   },
 
@@ -767,7 +743,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: '#a2b2b7',
+    color: '#6A6A6A', // Ash - same as HomeScreen
     marginTop: 16,
     textAlign: 'center',
   },

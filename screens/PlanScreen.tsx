@@ -22,17 +22,19 @@ import {
   StoredPlan
 } from '../utils/planService';
 // Import Coach Glow components
-import { CoachGlowChat, CoachGlowPlanSwapButton } from '../components';
+import { CoachGlowChat } from '../components';
 // Real-time hooks handle data fetching
 import {
   handleMealCompletion as instantMealCompletion,
   handleExerciseCompletion as instantExerciseCompletion,
   handleBulkMealCompletion as instantBulkMealCompletion,
   handleBulkExerciseCompletion as instantBulkExerciseCompletion,
-  handleDayCompletion as instantDayCompletion
+  handleDayCompletion as instantDayCompletion,
+  clearDailyCompletionCache
 } from '../utils/instantDataManager';
-import { useInstantStoredPlan, useInstantCompletionStats } from '../utils/useInstantData';
+import { useInstantStoredPlan, useInstantCompletionStats, useInstantAuraSummary, useInstantUserProfile } from '../utils/useInstantData';
 import { supabase } from '../utils/supabase';
+import { getUserDisplayName } from '../utils/profileService';
 import {
   markMealAsCompleted,
   markExerciseAsCompleted,
@@ -46,6 +48,7 @@ import {
   ExerciseCompletion
 } from '../utils/completionService';
 import { useRoute } from '@react-navigation/native';
+import { saveRecipe, isRecipeSaved, getSavedRecipes, removeSavedRecipe } from '../utils/savedRecipesService';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -53,11 +56,12 @@ const PlanScreen: React.FC = () => {
   const { user } = useAuth();
   const route = useRoute();
   const initialTab = (route.params as any)?.initialTab || 'workouts';
-  console.log('📋 PlanScreen: Initializing with initialTab:', initialTab);
   const [activeTab, setActiveTab] = useState<'workouts' | 'meals'>(initialTab);
   // Use instant data hooks for zero-delay updates
   const { plan, loading: planLoading } = useInstantStoredPlan(user?.id || null);
   const { stats } = useInstantCompletionStats(user?.id || null);
+  const { auraSummary: instantAuraSummary, loading: instantAuraLoading } = useInstantAuraSummary(user?.id || null);
+  const { profile: userProfile } = useInstantUserProfile(user?.id || null);
   const [completedDays, setCompletedDays] = useState<Set<string>>(new Set());
   const [expandedMeal, setExpandedMeal] = useState<number | null>(null);
   const [completedMeals, setCompletedMeals] = useState<Set<number>>(new Set());
@@ -68,24 +72,108 @@ const PlanScreen: React.FC = () => {
   const [isCompletingAllExercises, setIsCompletingAllExercises] = useState(false);
   const [isCoachGlowVisible, setIsCoachGlowVisible] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string>(''); // Empty means current day
+  const [currentDate, setCurrentDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  
+  // New state for meal actions
+  const [savingRecipe, setSavingRecipe] = useState<number | null>(null);
+  const [savedRecipes, setSavedRecipes] = useState<Set<string>>(new Set());
+  const [savedRecipesList, setSavedRecipesList] = useState<any[]>([]);
+  const [loadingSavedRecipes, setLoadingSavedRecipes] = useState(false);
+  const [showSavedRecipesModal, setShowSavedRecipesModal] = useState(false);
+  const [expandedSavedRecipe, setExpandedSavedRecipe] = useState<string | null>(null);
 
   // Update active tab when route params change
   useEffect(() => {
     const newInitialTab = (route.params as any)?.initialTab || 'workouts';
-    console.log('📋 PlanScreen: Route params changed, initialTab:', newInitialTab, 'current activeTab:', activeTab);
     if (newInitialTab !== activeTab) {
-      console.log('📋 PlanScreen: Updating activeTab to:', newInitialTab);
       setActiveTab(newInitialTab);
     }
   }, [route.params]);
+
+  // Periodic date check for when app stays open overnight
+  useEffect(() => {
+    const checkDateChange = () => {
+      const newDate = new Date().toISOString().split('T')[0];
+      if (newDate !== currentDate) {
+        // Date has changed - refresh all completion states
+        setCurrentDate(newDate);
+        // Reset completion states for new day
+        setCompletedMeals(new Set());
+        setCompletedExercises(new Set());
+        // Clear cached completion data for fresh start
+        if (user) {
+          clearDailyCompletionCache(user.id);
+          // Refresh data for the new day
+          fetchCompletedDays();
+          fetchIndividualCompletions();
+        }
+      }
+    };
+
+    // Check every minute for date changes
+    const dateCheckInterval = setInterval(checkDateChange, 60000);
+    
+    return () => clearInterval(dateCheckInterval);
+  }, [currentDate, user]);
 
   // Real-time data is now handled by hooks
   useEffect(() => {
     if (user) {
       fetchCompletedDays();
       fetchIndividualCompletions();
+      loadSavedRecipes(); // Load all saved recipes on app start
     }
   }, [user]);
+
+  // Refetch completions when selected day changes
+  useEffect(() => {
+    if (user) {
+      fetchIndividualCompletions();
+    }
+  }, [selectedDay, user]);
+
+  // Check for saved recipes
+  const checkSavedRecipes = async () => {
+    if (!user?.id || !meals) return;
+    
+    try {
+      const savedSet = new Set<string>();
+      for (const meal of meals) {
+        const result = await isRecipeSaved(user.id, meal.meal);
+        if (result.success && result.isSaved) {
+          savedSet.add(meal.meal);
+        }
+      }
+      setSavedRecipes(savedSet);
+    } catch (error) {
+    }
+  };
+
+  // Load saved recipes list
+  const loadSavedRecipes = async () => {
+    if (!user?.id) return;
+    
+    setLoadingSavedRecipes(true);
+    try {
+      const result = await getSavedRecipes(user.id);
+      
+      if (result.success && result.data) {
+        setSavedRecipesList(result.data);
+        // Update the saved recipes set for quick lookup
+        const savedNames = new Set(result.data.map((recipe: any) => recipe.meal_name));
+        setSavedRecipes(savedNames);
+      } else {
+        setSavedRecipesList([]);
+        setSavedRecipes(new Set());
+      }
+    } catch (error) {
+      setSavedRecipesList([]);
+      setSavedRecipes(new Set());
+    } finally {
+      setLoadingSavedRecipes(false);
+    }
+  };
+
 
   // Check for automatic day completion when data loads
   useEffect(() => {
@@ -101,14 +189,31 @@ const PlanScreen: React.FC = () => {
   useEffect(() => {
     const handleAppStateChange = (nextAppState: string) => {
       if (nextAppState === 'active' && user) {
-        console.log('🔄 App became active, refreshing plan data...');
-        fetchCompletedDays();
+        // Check if the date has changed since last time
+        const newDate = new Date().toISOString().split('T')[0];
+      if (newDate !== currentDate) {
+        // Date has changed - refresh all completion states
+        setCurrentDate(newDate);
+        // Reset completion states for new day
+        setCompletedMeals(new Set());
+        setCompletedExercises(new Set());
+        // Clear cached completion data for fresh start
+        clearDailyCompletionCache(user.id);
+        // Clear any cached data for the new day
+        setTimeout(() => {
+          fetchCompletedDays();
+          fetchIndividualCompletions();
+        }, 100);
+        } else {
+          // Same day - just refresh completed days
+          fetchCompletedDays();
+        }
       }
     };
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription?.remove();
-  }, [user]);
+  }, [user, currentDate]);
 
   // fetchUserPlan is now handled by useRealTimeStoredPlan hook
 
@@ -123,27 +228,52 @@ const PlanScreen: React.FC = () => {
         .eq('is_active', true);
 
       if (error) {
-        console.error('Error fetching completed days:', error);
         return;
       }
 
       const completedDates = new Set(data?.map(item => item.completed_date) || []);
       setCompletedDays(completedDates);
-      console.log('✅ Fetched completed days:', completedDates);
     } catch (error) {
-      console.error('Error fetching completed days:', error);
     }
   };
 
-  const fetchIndividualCompletions = async () => {
+  const fetchIndividualCompletions = async (targetDate?: string) => {
     if (!user) return;
     try {
-      const today = new Date().toISOString().split('T')[0];
+      // Use provided date or calculate based on selected day
+      let completionDate: string;
       
-      // Fetch completed meals and exercises for today
+      if (targetDate) {
+        completionDate = targetDate;
+      } else if (selectedDay) {
+        // Calculate the date for the selected day
+        const today = new Date();
+        const currentDayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const dayNameToNumber: { [key: string]: number } = {
+          'Sunday': 0,
+          'Monday': 1,
+          'Tuesday': 2,
+          'Wednesday': 3,
+          'Thursday': 4,
+          'Friday': 5,
+          'Saturday': 6
+        };
+        
+        const selectedDayNumber = dayNameToNumber[selectedDay];
+        const daysDifference = selectedDayNumber - currentDayOfWeek;
+        const targetDate = new Date(today);
+        targetDate.setDate(today.getDate() + daysDifference);
+        completionDate = targetDate.toISOString().split('T')[0];
+      } else {
+        // Use today if no specific day is selected
+        completionDate = new Date().toISOString().split('T')[0];
+      }
+      
+      
+      // Fetch completed meals and exercises for the target date
       const [mealsResult, exercisesResult] = await Promise.all([
-        getCompletedMeals(user.id, today),
-        getCompletedExercises(user.id, today)
+        getCompletedMeals(user.id, completionDate),
+        getCompletedExercises(user.id, completionDate)
       ]);
 
       if (mealsResult.success && mealsResult.data) {
@@ -156,9 +286,7 @@ const PlanScreen: React.FC = () => {
         setCompletedExercises(exerciseIndices);
       }
 
-      console.log('✅ Fetched individual completions');
     } catch (error) {
-      console.error('Error fetching individual completions:', error);
     }
   };
 
@@ -176,7 +304,6 @@ const PlanScreen: React.FC = () => {
         
         // Check if already completed today
         if (completedDays.has(today)) {
-          console.log('Day already completed, skipping duplicate completion');
           return; // Already completed, no need to show alert
         }
 
@@ -190,7 +317,6 @@ const PlanScreen: React.FC = () => {
           .single();
 
         if (existingCompletion) {
-          console.log('Day already completed in database, skipping duplicate completion');
           // Update local state to reflect the existing completion
           setCompletedDays(prev => new Set([...prev, today]));
           return;
@@ -212,12 +338,10 @@ const PlanScreen: React.FC = () => {
         if (error) {
           // Handle specific error cases
           if (error.code === '23505') {
-            console.log('Day completion already exists, updating local state');
             // Update local state even if database insert failed due to duplicate
             setCompletedDays(prev => new Set([...prev, today]));
             return;
           } else {
-            console.error('Error marking day as completed:', error);
             return;
           }
         }
@@ -234,9 +358,7 @@ const PlanScreen: React.FC = () => {
           [{ text: 'Awesome!', style: 'default' }]
         );
 
-        console.log('✅ Day automatically completed:', today);
       } catch (error) {
-        console.error('Error in automatic day completion:', error);
       }
     }
   };
@@ -247,11 +369,37 @@ const PlanScreen: React.FC = () => {
     try {
       setIsCompletingMeal(mealIndex);
       
+      // Calculate the completion date based on selected day
+      let completionDate: string;
+      if (selectedDay) {
+        const today = new Date();
+        const currentDayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const dayNameToNumber: { [key: string]: number } = {
+          'Sunday': 0,
+          'Monday': 1,
+          'Tuesday': 2,
+          'Wednesday': 3,
+          'Thursday': 4,
+          'Friday': 5,
+          'Saturday': 6
+        };
+        
+        const selectedDayNumber = dayNameToNumber[selectedDay];
+        const daysDifference = selectedDayNumber - currentDayOfWeek;
+        const targetDate = new Date(today);
+        targetDate.setDate(today.getDate() + daysDifference);
+        completionDate = targetDate.toISOString().split('T')[0];
+      } else {
+        completionDate = new Date().toISOString().split('T')[0];
+      }
+      
+      
       const result = await markMealAsCompleted(
         user.id,
         plan.id,
         mealIndex,
-        mealName
+        mealName,
+        completionDate
       );
 
       if (result.success) {
@@ -268,7 +416,6 @@ const PlanScreen: React.FC = () => {
         Alert.alert('Error', result.error || 'Failed to mark meal as completed');
       }
     } catch (error) {
-      console.error('Error completing meal:', error);
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsCompletingMeal(null);
@@ -281,11 +428,37 @@ const PlanScreen: React.FC = () => {
     try {
       setIsCompletingExercise(exerciseIndex);
       
+      // Calculate the completion date based on selected day
+      let completionDate: string;
+      if (selectedDay) {
+        const today = new Date();
+        const currentDayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const dayNameToNumber: { [key: string]: number } = {
+          'Sunday': 0,
+          'Monday': 1,
+          'Tuesday': 2,
+          'Wednesday': 3,
+          'Thursday': 4,
+          'Friday': 5,
+          'Saturday': 6
+        };
+        
+        const selectedDayNumber = dayNameToNumber[selectedDay];
+        const daysDifference = selectedDayNumber - currentDayOfWeek;
+        const targetDate = new Date(today);
+        targetDate.setDate(today.getDate() + daysDifference);
+        completionDate = targetDate.toISOString().split('T')[0];
+      } else {
+        completionDate = new Date().toISOString().split('T')[0];
+      }
+      
+      
       const result = await markExerciseAsCompleted(
         user.id,
         plan.id,
         exerciseIndex,
-        exerciseName
+        exerciseName,
+        completionDate
       );
 
       if (result.success) {
@@ -302,7 +475,6 @@ const PlanScreen: React.FC = () => {
         Alert.alert('Error', result.error || 'Failed to mark exercise as completed');
       }
     } catch (error) {
-      console.error('Error completing exercise:', error);
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsCompletingExercise(null);
@@ -313,25 +485,55 @@ const PlanScreen: React.FC = () => {
     if (!user || !plan || isCompletingAllMeals) return;
 
     // Check if all meals are already completed
-    const allMealIndices = new Set<number>(meals.map((_: any, index: number) => index));
+    const allMealIndices = new Set<number>((meals || []).map((_: any, index: number) => index));
     const allMealsCompleted = allMealIndices.size > 0 && [...allMealIndices].every(index => completedMeals.has(index));
     
     if (allMealsCompleted) {
-      Alert.alert('Already Completed! ✅', 'All your meals are already completed for today!');
+      const dayText = selectedDay ? ` for ${selectedDay}` : ' for today';
+      Alert.alert('Already Completed! ✅', `All your meals are already completed${dayText}!`);
       return;
     }
 
     try {
       setIsCompletingAllMeals(true);
       
+      // Calculate the completion date based on selected day
+      let completionDate: string;
+      if (selectedDay) {
+        const today = new Date();
+        const currentDayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const dayNameToNumber: { [key: string]: number } = {
+          'Sunday': 0,
+          'Monday': 1,
+          'Tuesday': 2,
+          'Wednesday': 3,
+          'Thursday': 4,
+          'Friday': 5,
+          'Saturday': 6
+        };
+        
+        const selectedDayNumber = dayNameToNumber[selectedDay];
+        const daysDifference = selectedDayNumber - currentDayOfWeek;
+        const targetDate = new Date(today);
+        targetDate.setDate(today.getDate() + daysDifference);
+        completionDate = targetDate.toISOString().split('T')[0];
+      } else {
+        completionDate = new Date().toISOString().split('T')[0];
+      }
+      
+      
+      // Calculate remaining uncompleted meals
+      const remainingMealsCount = allMealIndices.size - completedMeals.size;
+      
       // INSTANT UI UPDATE - Update state immediately for zero delays!
       setCompletedMeals(allMealIndices);
       
-      // Update instant state immediately - zero delays!
-      instantBulkMealCompletion(user.id, plan.id, meals.length);
+      // Update instant state immediately - zero delays! Only for remaining meals
+      instantBulkMealCompletion(user.id, plan.id, remainingMealsCount);
       
       // Show success message immediately
-      Alert.alert('All Meals Completed! 🎉', 'Great job completing all your meals for today!');
+      const dayText = selectedDay ? ` for ${selectedDay}` : ' for today';
+      Alert.alert('All Meals Completed! 🎉', `Great job completing all your meals${dayText}!`);
       
       // Check if day should be automatically completed
       setTimeout(() => {
@@ -344,20 +546,19 @@ const PlanScreen: React.FC = () => {
           const result = await markAllMealsAsCompleted(
             user.id,
             plan.id,
-            meals
+            meals || [],
+            completionDate,
+            true // Skip aura updates to prevent double counting since instant updates already handled this
           );
           
           if (!result.success) {
-            console.error('Background meal completion failed:', result.error);
             // Optionally show a subtle error message or retry
           }
         } catch (error) {
-          console.error('Background meal completion error:', error);
         }
       }, 0);
       
     } catch (error) {
-      console.error('Error completing all meals:', error);
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsCompletingAllMeals(false);
@@ -368,25 +569,55 @@ const PlanScreen: React.FC = () => {
     if (!user || !plan || isCompletingAllExercises) return;
 
     // Check if all exercises are already completed
-    const allExerciseIndices = new Set<number>(workouts.map((_: any, index: number) => index));
+    const allExerciseIndices = new Set<number>((workouts || []).map((_: any, index: number) => index));
     const allExercisesCompleted = allExerciseIndices.size > 0 && [...allExerciseIndices].every(index => completedExercises.has(index));
     
     if (allExercisesCompleted) {
-      Alert.alert('Already Completed! ✅', 'All your exercises are already completed for today!');
+      const dayText = selectedDay ? ` for ${selectedDay}` : ' for today';
+      Alert.alert('Already Completed! ✅', `All your exercises are already completed${dayText}!`);
       return;
     }
 
     try {
       setIsCompletingAllExercises(true);
       
+      // Calculate the completion date based on selected day
+      let completionDate: string;
+      if (selectedDay) {
+        const today = new Date();
+        const currentDayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const dayNameToNumber: { [key: string]: number } = {
+          'Sunday': 0,
+          'Monday': 1,
+          'Tuesday': 2,
+          'Wednesday': 3,
+          'Thursday': 4,
+          'Friday': 5,
+          'Saturday': 6
+        };
+        
+        const selectedDayNumber = dayNameToNumber[selectedDay];
+        const daysDifference = selectedDayNumber - currentDayOfWeek;
+        const targetDate = new Date(today);
+        targetDate.setDate(today.getDate() + daysDifference);
+        completionDate = targetDate.toISOString().split('T')[0];
+      } else {
+        completionDate = new Date().toISOString().split('T')[0];
+      }
+      
+      
+      // Calculate remaining uncompleted exercises
+      const remainingExercisesCount = allExerciseIndices.size - completedExercises.size;
+      
       // INSTANT UI UPDATE - Update state immediately for zero delays!
       setCompletedExercises(allExerciseIndices);
       
-      // Update instant state immediately - zero delays!
-      instantBulkExerciseCompletion(user.id, plan.id, workouts.length);
+      // Update instant state immediately - zero delays! Only for remaining exercises
+      instantBulkExerciseCompletion(user.id, plan.id, remainingExercisesCount);
       
       // Show success message immediately
-      Alert.alert('All Exercises Completed! 🎉', 'Amazing work completing your entire workout!');
+      const dayText = selectedDay ? ` for ${selectedDay}` : ' for today';
+      Alert.alert('All Exercises Completed! 🎉', `Amazing work completing your entire workout${dayText}!`);
       
       // Check if day should be automatically completed
       setTimeout(() => {
@@ -399,20 +630,19 @@ const PlanScreen: React.FC = () => {
           const result = await markAllExercisesAsCompleted(
             user.id,
             plan.id,
-            workouts
+            workouts || [],
+            completionDate,
+            true // Skip aura updates to prevent double counting since instant updates already handled this
           );
           
           if (!result.success) {
-            console.error('Background exercise completion failed:', result.error);
             // Optionally show a subtle error message or retry
           }
         } catch (error) {
-          console.error('Background exercise completion error:', error);
         }
       }, 0);
       
     } catch (error) {
-      console.error('Error completing all exercises:', error);
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsCompletingAllExercises(false);
@@ -459,21 +689,15 @@ const PlanScreen: React.FC = () => {
     const currentDayNumber = dayNameToNumber[currentDayName];
     const targetDayNumber = dayNameToNumber[targetDayName];
     
-    console.log(`📅 Today is: ${today.toDateString()}`);
-    console.log(`📅 Current day name: ${currentDayName}`);
-    console.log(`📅 Selected day name: ${targetDayName}`);
-    console.log(`📅 Is viewing current day: ${isCurrentDay}`);
 
     // Find the workout and diet for the target day
-    const workoutDay = plan.workout_plan.find((w: WorkoutPlan) =>
+    const workoutDay = plan.workout_plan?.find((w: WorkoutPlan) =>
       w.day.toLowerCase().includes(targetDayName.toLowerCase())
     );
-    const dietDay = plan.diet_plan.find((d: DietPlan) =>
+    const dietDay = plan.diet_plan?.find((d: DietPlan) =>
       d.day.toLowerCase().includes(targetDayName.toLowerCase())
     );
 
-    console.log(`💪 Found workout for ${targetDayName}:`, workoutDay ? 'Yes' : 'No');
-    console.log(`🍽️ Found diet for ${targetDayName}:`, dietDay ? 'Yes' : 'No');
 
     const workouts = workoutDay?.routine || [];
     const meals = dietDay?.meals || [];
@@ -496,16 +720,111 @@ const PlanScreen: React.FC = () => {
 
   // Helper functions to check if all items are completed
   const areAllMealsCompleted = () => {
-    if (meals.length === 0) return false;
+    if (!meals || meals.length === 0) return false;
     const allMealIndices = new Set<number>(meals.map((_: any, index: number) => index));
     return [...allMealIndices].every(index => completedMeals.has(index));
   };
 
   const areAllExercisesCompleted = () => {
-    if (workouts.length === 0) return false;
+    if (!workouts || workouts.length === 0) return false;
     const allExerciseIndices = new Set<number>(workouts.map((_: any, index: number) => index));
     return [...allExerciseIndices].every(index => completedExercises.has(index));
   };
+
+  // Handle saving/unsaving a recipe
+  const handleSaveRecipe = async (mealIndex: number, meal: any) => {
+    if (!user?.id) {
+      Alert.alert('Error', 'User not found. Please try again.');
+      return;
+    }
+
+    const isAlreadySaved = savedRecipes.has(meal.meal);
+    setSavingRecipe(mealIndex);
+    
+    try {
+      if (isAlreadySaved) {
+        // Unsave the recipe
+        
+        // Find the recipe ID from the saved recipes list
+        const savedRecipe = savedRecipesList.find(recipe => recipe.meal_name === meal.meal);
+        if (savedRecipe) {
+          const result = await removeSavedRecipe(user.id, savedRecipe.id);
+          
+          if (result.success) {
+            // Remove from saved recipes set
+            setSavedRecipes(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(meal.meal);
+              return newSet;
+            });
+            // Refresh the saved recipes list
+            loadSavedRecipes();
+            Alert.alert(
+              'Recipe Removed! 💔',
+              `"${meal.meal}" has been removed from your saved recipes.`,
+              [{ text: 'OK' }]
+            );
+          } else {
+            Alert.alert(
+              'Remove Failed',
+              result.error || 'Failed to remove recipe. Please try again.',
+              [{ text: 'OK' }]
+            );
+          }
+        } else {
+          Alert.alert('Error', 'Recipe not found in saved recipes.');
+        }
+      } else {
+        // Save the recipe
+        
+        const result = await saveRecipe(
+          user.id,
+          {
+            meal: meal.meal,
+            description: meal.description,
+            kcal: meal.kcal,
+            protein_g: meal.protein_g,
+            carbs_g: meal.carbs_g,
+            fat_g: meal.fat_g,
+            ingredients: meal.ingredients,
+            instructions: meal.instructions,
+            cooking_time: meal.cooking_time,
+            serving_size: meal.serving_size
+          },
+          plan?.id,
+          dayName,
+          meal.meal
+        );
+
+        if (result.success) {
+          // Add to saved recipes set
+          setSavedRecipes(prev => new Set([...prev, meal.meal]));
+          // Refresh the saved recipes list
+          loadSavedRecipes();
+          Alert.alert(
+            'Recipe Saved! ❤️',
+            `"${meal.meal}" has been added to your saved recipes.`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            'Save Failed',
+            result.error || 'Failed to save recipe. Please try again.',
+            [{ text: 'OK' }]
+          );
+        }
+      }
+    } catch (error) {
+      Alert.alert(
+        'Error',
+        'Something went wrong. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setSavingRecipe(null);
+    }
+  };
+
 
   // Get meal details from LLM-generated data
   const getMealDetails = (meal: any) => {
@@ -514,6 +833,16 @@ const PlanScreen: React.FC = () => {
       instructions: meal.instructions || ['Instructions not available'],
       cooking_time: meal.cooking_time || 'Not specified',
       serving_size: meal.serving_size || '1 serving'
+    };
+  };
+
+  // Get saved recipe details
+  const getSavedRecipeDetails = (recipe: any) => {
+    return {
+      ingredients: recipe.ingredients || ['Ingredients not available'],
+      instructions: recipe.instructions || ['Instructions not available'],
+      cooking_time: recipe.cooking_time || 'Not specified',
+      serving_size: recipe.serving_size || '1 serving'
     };
   };
 
@@ -607,10 +936,6 @@ const PlanScreen: React.FC = () => {
               <Text style={styles.completedButtonText}>Done</Text>
             </View>
           )}
-          <TouchableOpacity style={styles.swapButton}>
-            <Ionicons name="refresh-outline" size={16} color="#b88cff" />
-            <Text style={styles.swapButtonText}>Swap</Text>
-          </TouchableOpacity>
         </View>
         {/* Coach Glow Mascot - appears next to second workout card */}
         {index === 1 && (
@@ -625,6 +950,7 @@ const PlanScreen: React.FC = () => {
       </View>
     );
   };
+
 
   const renderMealCard = (meal: any, index: number) => {
     const isExpanded = expandedMeal === index;
@@ -766,13 +1092,24 @@ const PlanScreen: React.FC = () => {
 
             {/* Action Buttons */}
             <View style={styles.mealActions}>
-              <TouchableOpacity style={styles.swapButton}>
-                <Ionicons name="refresh-outline" size={16} color="#b88cff" />
-                <Text style={styles.swapButtonText}>Swap Meal</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.favoriteButton}>
-                <Ionicons name="heart-outline" size={16} color="#ff6b6b" />
-                <Text style={styles.favoriteButtonText}>Save Recipe</Text>
+              <TouchableOpacity 
+                style={[styles.favoriteButton, savingRecipe === index && styles.disabledButton]}
+                onPress={() => handleSaveRecipe(index, meal)}
+                disabled={savingRecipe === index}
+              >
+                {savingRecipe === index ? (
+                  <ActivityIndicator size="small" color="#ff6b6b" />
+                ) : (
+                  <Ionicons 
+                    name={savedRecipes.has(meal.meal) ? "heart" : "heart-outline"} 
+                    size={16} 
+                    color="#ff6b6b" 
+                  />
+                )}
+                <Text style={styles.favoriteButtonText}>
+                  {savingRecipe === index ? 'Saving...' : 
+                   savedRecipes.has(meal.meal) ? 'Unsave Recipe' : 'Save Recipe'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -814,14 +1151,31 @@ const PlanScreen: React.FC = () => {
         <View style={styles.mainCard}>
           {/* Header Section */}
           <View style={styles.headerSection}>
-            {/* Welcome Message */}
-            <View style={styles.welcomeSection}>
-              <Text style={styles.welcomeText}>
-                Hey {user?.email?.split('@')[0] || 'User'}! 👋
-              </Text>
-              <Text style={styles.planTitle}>
-                Here's your custom plan
-              </Text>
+            {/* Logo and Welcome Message */}
+            <View style={styles.headerTopRow}>
+              <View style={styles.logoContainer}>
+                <Image
+                  source={require('../assets/mascot/flex_aura_new_logo_no_bg_2.png')}
+                  style={styles.headerLogo}
+                  resizeMode="contain"
+                />
+              </View>
+              <View style={styles.welcomeSection}>
+                <Text style={styles.welcomeText}>
+                  Hey {getUserDisplayName(userProfile)}! 👋
+                </Text>
+                <Text style={styles.planTitle}>
+                  Here's your custom plan
+                </Text>
+                {/* Display instant aura if available */}
+                {instantAuraSummary && instantAuraSummary.total_aura > 0 && (
+                  <View style={styles.auraMinibar}>
+                    <Text style={styles.auraMinibarText}>
+                      ✨ Aura: {instantAuraSummary.total_aura}
+                    </Text>
+                  </View>
+                )}
+               </View>
             </View>
 
 
@@ -907,7 +1261,7 @@ const PlanScreen: React.FC = () => {
                           const workoutType = workoutDay?.type || 'Workout';
                           return `${workoutType} - ${workouts.length} exercises planned`;
                         })()
-                    : `${meals.reduce((total: number, meal: any) => total + (meal.kcal || 0), 0)} kcal planned`
+                    : `${meals?.reduce((total: number, meal: any) => total + (meal.kcal || 0), 0) || 0} kcal planned`
                   }
                 </Text>
                 <Text style={styles.planSummarySubtext}>
@@ -921,15 +1275,16 @@ const PlanScreen: React.FC = () => {
                 )}
               </View>
 
+
               {/* Content Cards */}
               <View style={styles.contentSection}>
                 {activeTab === 'workouts'
-                  ? workouts.map((workout: any, index: number) => renderWorkoutCard(workout, index))
-                  : meals.map((meal: any, index: number) => renderMealCard(meal, index))
+                  ? workouts?.map((workout: any, index: number) => renderWorkoutCard(workout, index)) || []
+                  : meals?.map((meal: any, index: number) => renderMealCard(meal, index)) || []
                 }
 
                 {/* Show rest day message for workouts or no data message */}
-                {activeTab === 'workouts' && workouts.length === 0 ? (
+                {activeTab === 'workouts' && (!workouts || workouts.length === 0) ? (
                   isRestDay ? (
                     <View style={styles.restDayContainer}>
                       <View style={styles.restDayIconContainer}>
@@ -958,7 +1313,7 @@ const PlanScreen: React.FC = () => {
                       </Text>
                     </View>
                   )
-                ) : activeTab === 'meals' && meals.length === 0 ? (
+                ) : activeTab === 'meals' && (!meals || meals.length === 0) ? (
                   <View style={styles.noDataContainer}>
                     <Text style={styles.noDataText}>
                       No meal plan available for today.
@@ -968,7 +1323,7 @@ const PlanScreen: React.FC = () => {
               </View>
 
               {/* Bulk Completion Buttons */}
-              {activeTab === 'workouts' && workouts.length > 0 && (
+              {activeTab === 'workouts' && workouts && workouts.length > 0 && (
                 <View style={styles.bulkCompletionSection}>
                   <TouchableOpacity
                     style={[
@@ -996,7 +1351,7 @@ const PlanScreen: React.FC = () => {
                 </View>
               )}
 
-              {activeTab === 'meals' && meals.length > 0 && (
+              {activeTab === 'meals' && meals && meals.length > 0 && (
                 <View style={styles.bulkCompletionSection}>
                   <TouchableOpacity
                     style={[
@@ -1021,20 +1376,33 @@ const PlanScreen: React.FC = () => {
                       </>
                     )}
                   </TouchableOpacity>
+                  
+                  {/* View Saved Recipes Button */}
+                  <TouchableOpacity 
+                    style={styles.viewSavedRecipesButton}
+                    onPress={() => {
+                      loadSavedRecipes();
+                      setShowSavedRecipesModal(true);
+                    }}
+                  >
+                    <Ionicons name="heart" size={20} color="#ff6b6b" />
+                    <Text style={styles.viewSavedRecipesButtonText}>View Saved Recipes</Text>
+                    <Ionicons name="chevron-forward" size={16} color="#ff6b6b" />
+                  </TouchableOpacity>
                 </View>
               )}
 
               {/* Workout Progress Bar (only show for workouts) */}
-              {activeTab === 'workouts' && workouts.length > 0 && (
+              {activeTab === 'workouts' && workouts && workouts.length > 0 && (
                 <View style={styles.progressSection}>
                   <Text style={styles.progressTitle}>Workout Progress</Text>
                   <View style={styles.progressBarContainer}>
                     <View style={styles.progressBar}>
-                      <View style={[styles.progressFill, { width: `${(completedExercises.size / workouts.length) * 100}%` }]} />
+                      <View style={[styles.progressFill, { width: `${(completedExercises.size / (workouts?.length || 1)) * 100}%` }]} />
                     </View>
                   </View>
                   <Text style={styles.progressText}>
-                    {completedExercises.size} of {workouts.length} exercises completed
+                    {completedExercises.size} of {workouts?.length || 0} exercises completed
                   </Text>
                 </View>
               )}
@@ -1051,7 +1419,7 @@ const PlanScreen: React.FC = () => {
             >
               <View style={styles.coachInputBar}>
                 <Image
-                  source={require('../assets/mascot/mascot normal no bg.png')}
+                  source={require('../assets/mascot/flex_aura_new_logo_no_bg_2.png')}
                   style={styles.coachInputIcon}
                   resizeMode="contain"
                 />
@@ -1106,6 +1474,132 @@ const PlanScreen: React.FC = () => {
         mode="general"
       />
 
+      {/* Saved Recipes Modal */}
+      {showSavedRecipesModal && (
+        <View style={styles.savedRecipesModalOverlay}>
+          <View style={styles.savedRecipesModalContainer}>
+            {/* Modal Header */}
+            <View style={styles.savedRecipesModalHeader}>
+              <TouchableOpacity 
+                style={styles.savedRecipesCloseButton}
+                onPress={() => setShowSavedRecipesModal(false)}
+              >
+                <Ionicons name="close" size={24} color="#666" />
+              </TouchableOpacity>
+              <Text style={styles.savedRecipesModalTitle}>❤️ Your Saved Recipes</Text>
+              <View style={styles.savedRecipesModalSpacer} />
+            </View>
+
+            {/* Modal Content */}
+            <ScrollView 
+              style={styles.savedRecipesModalContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {loadingSavedRecipes ? (
+                <View style={styles.savedRecipesLoading}>
+                  <ActivityIndicator size="large" color="#ff6b6b" />
+                  <Text style={styles.savedRecipesLoadingText}>Loading your recipes...</Text>
+                </View>
+              ) : savedRecipesList.length > 0 ? (
+                <View style={styles.savedRecipesList}>
+                  {savedRecipesList.map((recipe: any, index: number) => {
+                    const isExpanded = expandedSavedRecipe === recipe.id;
+                    const recipeDetails = getSavedRecipeDetails(recipe);
+                    
+                    return (
+                      <View key={recipe.id} style={styles.savedRecipeCard}>
+                        {/* Recipe Header - Clickable */}
+                        <TouchableOpacity 
+                          style={styles.savedRecipeHeader}
+                          onPress={() => setExpandedSavedRecipe(isExpanded ? null : recipe.id)}
+                        >
+                          <View style={styles.savedRecipeHeaderContent}>
+                            <Text style={styles.savedRecipeName}>{recipe.meal_name}</Text>
+                            <Text style={styles.savedRecipeCalories}>{recipe.kcal} kcal</Text>
+                          </View>
+                          <Ionicons 
+                            name={isExpanded ? "chevron-up" : "chevron-down"} 
+                            size={20} 
+                            color="#b88cff" 
+                          />
+                        </TouchableOpacity>
+
+                        {/* Recipe Description */}
+                        <Text style={styles.savedRecipeDescription} numberOfLines={2}>
+                          {recipe.description}
+                        </Text>
+
+                        {/* Recipe Meta */}
+                        <View style={styles.savedRecipeMeta}>
+                          <Text style={styles.savedRecipeMetaText}>
+                            {recipe.cooking_time} • {recipe.serving_size}
+                          </Text>
+                          <Text style={styles.savedRecipeDate}>
+                            Saved {new Date(recipe.created_at).toLocaleDateString()}
+                          </Text>
+                        </View>
+
+                        {/* Expanded Content */}
+                        {isExpanded && (
+                          <View style={styles.savedRecipeExpandedContent}>
+                            {/* Nutritional Info */}
+                            <View style={styles.savedRecipeNutritionSection}>
+                              <Text style={styles.savedRecipeNutritionTitle}>Nutritional Info</Text>
+                              <View style={styles.savedRecipeNutritionGrid}>
+                                <View style={styles.savedRecipeNutritionItem}>
+                                  <Text style={styles.savedRecipeNutritionValue}>{recipe.kcal || 0}</Text>
+                                  <Text style={styles.savedRecipeNutritionLabel}>Calories</Text>
+                                </View>
+                                <View style={styles.savedRecipeNutritionItem}>
+                                  <Text style={styles.savedRecipeNutritionValue}>{recipe.protein_g || 0}g</Text>
+                                  <Text style={styles.savedRecipeNutritionLabel}>Protein</Text>
+                                </View>
+                                <View style={styles.savedRecipeNutritionItem}>
+                                  <Text style={styles.savedRecipeNutritionValue}>{recipe.carbs_g || 0}g</Text>
+                                  <Text style={styles.savedRecipeNutritionLabel}>Carbs</Text>
+                                </View>
+                                <View style={styles.savedRecipeNutritionItem}>
+                                  <Text style={styles.savedRecipeNutritionValue}>{recipe.fat_g || 0}g</Text>
+                                  <Text style={styles.savedRecipeNutritionLabel}>Fat</Text>
+                                </View>
+                              </View>
+                            </View>
+
+                            {/* Ingredients */}
+                            <View style={styles.savedRecipeIngredientsSection}>
+                              <Text style={styles.savedRecipeIngredientsTitle}>Ingredients</Text>
+                              {recipeDetails.ingredients.map((ingredient: string, idx: number) => (
+                                <Text key={idx} style={styles.savedRecipeIngredientItem}>• {ingredient}</Text>
+                              ))}
+                            </View>
+
+                            {/* Instructions */}
+                            <View style={styles.savedRecipeInstructionsSection}>
+                              <Text style={styles.savedRecipeInstructionsTitle}>How to Prepare</Text>
+                              {recipeDetails.instructions.map((instruction: string, idx: number) => (
+                                <Text key={idx} style={styles.savedRecipeInstructionItem}>{instruction}</Text>
+                              ))}
+                            </View>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : (
+                <View style={styles.noSavedRecipes}>
+                  <Ionicons name="heart-outline" size={64} color="#ccc" />
+                  <Text style={styles.noSavedRecipesTitle}>No Saved Recipes Yet</Text>
+                  <Text style={styles.noSavedRecipesText}>
+                    Save recipes you love by tapping the heart icon on any meal!
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      )}
+
     </LinearGradient>
   );
 };
@@ -1143,22 +1637,49 @@ const styles = StyleSheet.create({
   headerSection: {
     marginBottom: 28,
   },
-  welcomeSection: {
+  headerTopRow: {
+    flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 20,
   },
+  logoContainer: {
+    marginRight: 12,
+  },
+  headerLogo: {
+    width: 80,
+    height: 80,
+  },
+  welcomeSection: {
+    flex: 1,
+    alignItems: 'flex-start',
+  },
   welcomeText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   planTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: '#222',
-    textAlign: 'center',
-    lineHeight: 30,
+    textAlign: 'left',
+    lineHeight: 24,
+  },
+  auraMinibar: {
+    marginTop: 6,
+    backgroundColor: '#f0f8ff',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#e0f0ff',
+  },
+  auraMinibarText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2196f3',
+    textAlign: 'left',
   },
   tabContainer: {
     flexDirection: 'row',
@@ -1542,24 +2063,252 @@ const styles = StyleSheet.create({
     color: '#ff6b6b',
     fontWeight: '500',
   },
+  disabledButton: {
+    opacity: 0.6,
+  },
 
-  // Swap Button
-  swapButton: {
+  // View Saved Recipes Button
+  viewSavedRecipesButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#fff3f3',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#b88cff',
-    borderRadius: 16,
-    gap: 3,
-    minWidth: 60,
+    borderColor: '#ff6b6b',
+    marginTop: 12,
   },
-  swapButtonText: {
+  viewSavedRecipesButtonText: {
+    fontSize: 16,
+    color: '#ff6b6b',
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'center',
+  },
+
+  savedRecipesLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    gap: 8,
+  },
+  savedRecipesLoadingText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  savedRecipesList: {
+    gap: 12,
+  },
+  savedRecipeCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#ff6b6b',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    marginBottom: 12,
+  },
+  savedRecipeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  savedRecipeHeaderContent: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  savedRecipeName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    flex: 1,
+  },
+  savedRecipeCalories: {
+    fontSize: 14,
+    color: '#ff6b6b',
+    fontWeight: '600',
+  },
+  savedRecipeDescription: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  savedRecipeMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  savedRecipeMetaText: {
     fontSize: 12,
-    color: '#b88cff',
-    fontWeight: '500',
+    color: '#999',
   },
+  savedRecipeDate: {
+    fontSize: 12,
+    color: '#999',
+  },
+
+  // Expanded Saved Recipe Content
+  savedRecipeExpandedContent: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  savedRecipeNutritionSection: {
+    marginBottom: 16,
+  },
+  savedRecipeNutritionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 12,
+  },
+  savedRecipeNutritionGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    padding: 12,
+  },
+  savedRecipeNutritionItem: {
+    alignItems: 'center',
+  },
+  savedRecipeNutritionValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  savedRecipeNutritionLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  savedRecipeIngredientsSection: {
+    marginBottom: 16,
+  },
+  savedRecipeIngredientsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  savedRecipeIngredientItem: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  savedRecipeInstructionsSection: {
+    marginBottom: 8,
+  },
+  savedRecipeInstructionsTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
+  },
+  savedRecipeInstructionItem: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  noSavedRecipes: {
+    alignItems: 'center',
+    padding: 40,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  noSavedRecipesTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  noSavedRecipesText: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  exploreMealsButton: {
+    backgroundColor: '#b88cff',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 20,
+  },
+  exploreMealsButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // Saved Recipes Modal
+  savedRecipesModalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  savedRecipesModalContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    marginHorizontal: 20,
+    maxHeight: '80%',
+    width: screenWidth - 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  savedRecipesModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  savedRecipesCloseButton: {
+    padding: 4,
+  },
+  savedRecipesModalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    flex: 1,
+    textAlign: 'center',
+  },
+  savedRecipesModalSpacer: {
+    width: 32,
+  },
+  savedRecipesModalContent: {
+    maxHeight: 400,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+
 
   // Floating Mascot
   floatingMascot: {
@@ -1626,8 +2375,8 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   coachInputIcon: {
-    width: 24,
-    height: 24,
+    width: 32,
+    height: 32,
     marginRight: 12,
   },
   coachInput: {

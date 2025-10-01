@@ -58,8 +58,14 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({ children
       const { data, error } = await OnboardingService.getUserProfile(user.id);
       
       if (error) {
-        console.error('Error loading user profile:', error);
-        setError('Failed to load profile data');
+        
+        
+        // Handle network errors more gracefully
+        if (error.message?.includes('Network request failed') || error.message?.includes('fetch')) {
+          setError('Network connection issue. Please check your internet connection and try again.');
+        } else {
+          setError('Failed to load profile data');
+        }
         return;
       }
 
@@ -70,11 +76,11 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({ children
         setCurrentStep(data.onboarding_step || 4);
       } else {
         // Profile doesn't exist, create it
-        console.log('User profile does not exist, creating new one...');
+        
         const { data: newProfile, error: createError } = await OnboardingService.createUserProfile(user);
         
         if (createError) {
-          console.error('Error creating user profile:', createError);
+          
           setError('Failed to create profile');
         } else {
           setUserProfile(newProfile);
@@ -83,8 +89,14 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({ children
         }
       }
     } catch (err) {
-      console.error('Unexpected error loading profile:', err);
-      setError('An unexpected error occurred');
+      
+      
+      // Handle network errors more gracefully
+      if (err.message?.includes('Network request failed') || err.message?.includes('fetch')) {
+        setError('Network connection issue. Please check your internet connection and try again.');
+      } else {
+        setError('An unexpected error occurred');
+      }
     } finally {
       setLoading(false);
     }
@@ -101,7 +113,8 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({ children
     try {
       // Save the current step data, but set the onboarding_step to the NEXT step
       // This way, when the user reloads, they'll be taken to the next incomplete screen
-      const nextStep = step + 1;
+      // However, don't increment beyond step 22 (the final onboarding step)
+      const nextStep = Math.min(step + 1, 22);
       const { data: updatedProfile, error } = await OnboardingService.saveOnboardingStep(
         user.id,
         nextStep,
@@ -109,7 +122,7 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({ children
       );
 
       if (error) {
-        console.error('Error saving onboarding data:', error);
+        
         setError('Failed to save data. Please try again.');
         return false;
       }
@@ -128,9 +141,9 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({ children
         setTimeout(async () => {
           try {
             await ensureUserHasCalorieData(user.id);
-            console.log('Calorie data calculation completed');
+            
           } catch (calorieError) {
-            console.error('Failed to calculate calorie data:', calorieError);
+            
             // Don't show error to user since this is a background operation
           }
         }, 100);
@@ -140,16 +153,16 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({ children
       setCurrentStep(nextStep);
       return true;
     } catch (err) {
-      console.error('Unexpected error saving data:', err);
+      
       setError('An unexpected error occurred');
       return false;
     }
   };
 
   const completeOnboarding = async (): Promise<boolean> => {
-    console.log('🏁 completeOnboarding called for user:', user?.id);
+    
     if (!user) {
-      console.error('❌ No user found for onboarding completion');
+      
       setError('User not authenticated');
       return false;
     }
@@ -157,23 +170,23 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({ children
     setError(null);
 
     try {
-      console.log('📡 Calling OnboardingService.completeOnboarding');
+      
       const { data: updatedProfile, error } = await OnboardingService.completeOnboarding(user.id);
-      console.log('📥 completeOnboarding response:', { data: updatedProfile, error });
+      
 
       if (error) {
-        console.error('❌ Error completing onboarding:', error);
+        
         setError('Failed to complete onboarding. Please try again.');
         return false;
       }
 
-      console.log('✅ Onboarding completed successfully');
+      
       setUserProfile(updatedProfile);
       setIsOnboardingComplete(true);
-      setCurrentStep(22);
+      setCurrentStep(22); // Keep at step 22 when onboarding is complete
       return true;
     } catch (err) {
-      console.error('💥 Unexpected error completing onboarding:', err);
+      
       setError('An unexpected error occurred');
       return false;
     }
@@ -195,7 +208,7 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({ children
       const { data: updatedProfile, error } = await OnboardingService.resetOnboarding(user.id);
 
       if (error) {
-        console.error('Error resetting onboarding:', error);
+        
         setError('Failed to reset onboarding. Please try again.');
         return false;
       }
@@ -205,7 +218,7 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({ children
       setCurrentStep(4);
       return true;
     } catch (err) {
-      console.error('Unexpected error resetting onboarding:', err);
+      
       setError('An unexpected error occurred');
       return false;
     }
@@ -215,12 +228,17 @@ export const OnboardingProvider: React.FC<OnboardingProviderProps> = ({ children
     if (!userProfile) return 4;
     if (isOnboardingComplete) return -1; // Go to dashboard
     // Return the current step (which is already the next incomplete step)
-    return Math.min(22, currentStep);
+    // Ensure we never return a step beyond 22
+    return Math.min(22, Math.max(1, currentStep));
   };
 
   const isStepCompleted = (step: number): boolean => {
     if (!userProfile) return false;
     // A step is completed if the current step is greater than the step being checked
+    // For step 22, it's completed when onboarding is complete
+    if (step === 22) {
+      return isOnboardingComplete;
+    }
     return currentStep > step;
   };
 

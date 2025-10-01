@@ -78,7 +78,7 @@ const OnboardingScreenX: React.FC = () => {
     const success = await navigateToNextStep(SCREEN_NUMBER, stepData);
     
     if (!success) {
-      console.error('Failed to save onboarding data');
+      
     }
   };
 

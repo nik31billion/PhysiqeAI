@@ -96,15 +96,15 @@ const OnboardingScreen18: React.FC = () => {
     // Convert slider value (0-100) to motivation level (1-10)
     const motivationLevelScaled = Math.round((motivationLevel / 100) * 9) + 1;
     
-    console.log('Motivation Level - Slider Value:', motivationLevel);
-    console.log('Motivation Level - Scaled Value:', motivationLevelScaled);
+    
+    
     
     const success = await navigateToNextStep(18, {
       motivation_level: motivationLevelScaled,
     });
     
     if (!success) {
-      console.error('Failed to save onboarding data');
+      
     }
   };
 

@@ -55,11 +55,11 @@ const notifyListeners = () => {
       try {
         callback();
       } catch (error) {
-        console.error('❌ Error in data change listener:', error);
+        
       }
     });
   } catch (error) {
-    console.error('❌ Critical error in notifyListeners:', error);
+    
   }
 };
 
@@ -208,7 +208,7 @@ export const updateCompletedDays = (userId: string, days: any) => {
     dataCache.set(dataCache.getCompletedDaysKey(userId), daysSet);
     notifyListeners();
   } catch (error) {
-    console.error('❌ Error updating completed days:', error);
+    
     // Set default empty Set to prevent crashes
     globalUserData.completedDays = new Set();
     dataCache.set(dataCache.getCompletedDaysKey(userId), new Set());
@@ -227,10 +227,10 @@ export const updateAuraSummary = (userId: string, auraSummary: any) => {
       dataCache.set(`aura_summary_${userId}`, auraSummary);
       notifyListeners();
     } else {
-      console.warn('⚠️ Invalid aura summary data:', auraSummary);
+      
     }
   } catch (error) {
-    console.error('❌ Error updating aura summary:', error);
+    
     // Set default values to prevent crashes
     const defaultAura = {
       total_aura: 0,
@@ -248,11 +248,52 @@ export const updateAuraSummary = (userId: string, auraSummary: any) => {
 };
 
 /**
+ * Clear all cached completion data for a user (useful for daily resets)
+ */
+export const clearDailyCompletionCache = (userId: string) => {
+  try {
+    // Clear all completion-related cache entries
+    const cacheKeysToRemove = [
+      dataCache.getCompletionStatsKey(userId),
+      dataCache.getCompletedDaysKey(userId),
+      `aura_summary_${userId}`,
+      `meal_completions_${userId}`,
+      `exercise_completions_${userId}`
+    ];
+
+    cacheKeysToRemove.forEach(key => {
+      dataCache.delete(key);
+    });
+
+    // Reset global completion states but preserve profile and plan data
+    globalUserData.completionStats = {
+      totalDaysCompleted: 0,
+      currentStreak: 0,
+      bestStreak: 0,
+      completedDates: [],
+      weeklyProgress: 0
+    };
+    
+    // Keep aura summary but reset daily earned
+    if (globalUserData.auraSummary) {
+      globalUserData.auraSummary = {
+        ...globalUserData.auraSummary,
+        daily_aura_earned: 0
+      };
+    }
+
+    notifyListeners();
+  } catch (error) {
+    
+  }
+};
+
+/**
  * Load aura data from database
  */
 export const loadAuraData = async (userId: string) => {
   try {
-    console.log('🔄 Loading aura data from database...');
+    
     
     const { getUserAuraSummary } = await import('./auraService');
     const auraSummary = await getUserAuraSummary(userId);
@@ -260,7 +301,7 @@ export const loadAuraData = async (userId: string) => {
     if (auraSummary) {
       globalUserData.auraSummary = auraSummary;
       dataCache.set(`aura_summary_${userId}`, auraSummary);
-      console.log('✅ Aura data loaded from database:', auraSummary.total_aura);
+      
     } else {
       // Initialize with default values if no aura data exists
       const defaultAura = {
@@ -274,12 +315,12 @@ export const loadAuraData = async (userId: string) => {
       };
       globalUserData.auraSummary = defaultAura;
       dataCache.set(`aura_summary_${userId}`, defaultAura);
-      console.log('✅ Aura data initialized with defaults');
+      
     }
     
     notifyListeners();
   } catch (error) {
-    console.error('❌ Error loading aura data:', error);
+    
     // Set default values
     const defaultAura = {
       total_aura: 0,
@@ -297,18 +338,17 @@ export const loadAuraData = async (userId: string) => {
 };
 
 /**
- * Load data from API and update global state - SAFE VERSION
+ * Load data from API and update global state - FAST VERSION (prioritize profile/plan first)
  */
 export const loadUserData = async (userId: string) => {
   try {
-    console.log('🔄 Loading user data for instant access...');
     
     // Import services dynamically with error handling
     let services;
     try {
       services = await import('./optimizedServices');
     } catch (importError) {
-      console.error('❌ Error importing services:', importError);
+      
       return;
     }
     
@@ -320,94 +360,101 @@ export const loadUserData = async (userId: string) => {
       getCachedCompletedDays 
     } = services;
     
-    // Load each service individually to prevent one failure from breaking all
-    const results = await Promise.allSettled([
-      getCachedUserProfile(userId).catch(err => {
-        console.error('❌ Profile service error:', err);
-        return null;
-      }),
-      getCachedUserPlan(userId).catch(err => {
-        console.error('❌ Plan service error:', err);
-        return null;
-      }),
-      getCachedStoredPlan(userId).catch(err => {
-        console.error('❌ Stored plan service error:', err);
-        return null;
-      }),
-      getCachedCompletionStats(userId).catch(err => {
-        console.error('❌ Completion stats service error:', err);
-        return null;
-      }),
-      getCachedCompletedDays(userId).catch(err => {
-        console.error('❌ Completed days service error:', err);
-        return null;
-      })
+    // PRIORITY 1: Load profile and plan first (most important for HomeScreen)
+    const [profile, plan] = await Promise.allSettled([
+      getCachedUserProfile(userId),
+      getCachedUserPlan(userId)
     ]);
     
-    // Also load aura data
-    await loadAuraData(userId);
-    
-    const [profile, plan, storedPlan, stats, days] = results.map(result => 
-      result.status === 'fulfilled' ? result.value : null
-    );
-    
-    // Update global state with individual error handling
+    // Update profile immediately -- no waiting
     try {
-      if (profile && typeof profile === 'object' && profile !== null) {
-        globalUserData.profile = profile;
-        dataCache.set(dataCache.getUserProfileKey(userId), profile);
-        console.log('✅ Profile data updated');
+      if (profile.status === 'fulfilled' && profile.value && typeof profile.value === 'object' && profile.value !== null) {
+        globalUserData.profile = profile.value;
+        dataCache.set(dataCache.getUserProfileKey(userId), profile.value);
+        notifyListeners(); // Notify immediately
       }
     } catch (error) {
-      console.error('❌ Error updating profile data:', error);
+      
     }
     
+    // Update plan immediately -- no waiting
     try {
-      if (plan && typeof plan === 'object' && plan !== null) {
-        globalUserData.plan = plan;
-        dataCache.set(dataCache.getUserPlanKey(userId), plan);
-        console.log('✅ Plan data updated');
+      if (plan.status === 'fulfilled' && plan.value && typeof plan.value === 'object' && plan.value !== null) {
+        globalUserData.plan = plan.value;
+        dataCache.set(dataCache.getUserPlanKey(userId), plan.value);
+        notifyListeners(); // Notify immediately
       }
     } catch (error) {
-      console.error('❌ Error updating plan data:', error);
+      
     }
     
-    try {
-      if (storedPlan && typeof storedPlan === 'object' && storedPlan !== null) {
-        globalUserData.storedPlan = storedPlan;
-        dataCache.set(`stored_plan_${userId}`, storedPlan);
-        console.log('✅ Stored plan data updated');
+    // PRIORITY 2: Load remaining data in background (non-blocking)
+    setTimeout(async () => {
+      try {
+        const results = await Promise.allSettled([
+          getCachedStoredPlan(userId).catch(err => null),
+          getCachedCompletionStats(userId).catch(err => null),
+          getCachedCompletedDays(userId).catch(err => null)
+        ]);
+        
+        const [storedPlan, stats, days] = results.map(result => 
+          result.status === 'fulfilled' ? result.value : null
+        );
+        
+        // Update each with error handling
+        try {
+          if (storedPlan && typeof storedPlan === 'object' && storedPlan !== null) {
+            globalUserData.storedPlan = storedPlan;
+            dataCache.set(`stored_plan_${userId}`, storedPlan);
+          }
+        } catch (error) {
+          
+        }
+        
+        try {
+          if (stats && typeof stats === 'object' && stats !== null) {
+            globalUserData.completionStats = stats;
+            dataCache.set(dataCache.getCompletionStatsKey(userId), stats);
+          }
+        } catch (error) {
+          
+        }
+        
+        try {
+          if (days && (days instanceof Set || (Array.isArray(days) && days !== null))) {
+            globalUserData.completedDays = days;
+            dataCache.set(dataCache.getCompletedDaysKey(userId), days);
+          }
+        } catch (error) {
+          
+        }
+        
+        // Lightweight aura load (skip complex SQL functions temporarily)
+        try {
+          const simpleAura = {
+            total_aura: 0,
+            current_streak: 0,
+            best_streak: 0,
+            daily_aura_earned: 0,
+            achievements_unlocked: [],
+            shares_today: 0,
+            coach_glo_interactions_today: 0
+          };
+          globalUserData.auraSummary = simpleAura;
+          dataCache.set(`aura_summary_${userId}`, simpleAura);
+        } catch (error) {
+          
+        }
+        
+        notifyListeners();
+      } catch (backgroundError) {
+        
       }
-    } catch (error) {
-      console.error('❌ Error updating stored plan data:', error);
-    }
+    }, 100); // Small delay to let UI render first
     
-    try {
-      if (stats && typeof stats === 'object' && stats !== null) {
-        globalUserData.completionStats = stats;
-        dataCache.set(dataCache.getCompletionStatsKey(userId), stats);
-        console.log('✅ Completion stats updated');
-      }
-    } catch (error) {
-      console.error('❌ Error updating completion stats data:', error);
-    }
     
-    try {
-      if (days && (days instanceof Set || (Array.isArray(days) && days !== null))) {
-        globalUserData.completedDays = days;
-        dataCache.set(dataCache.getCompletedDaysKey(userId), days);
-        console.log('✅ Completed days updated');
-      }
-    } catch (error) {
-      console.error('❌ Error updating completed days data:', error);
-    }
-    
-    // Notify all listeners
-    notifyListeners();
-    
-    console.log('✅ User data loaded and ready for instant access');
   } catch (error) {
-    console.error('❌ Critical error loading user data:', error);
+    
     // Set default values to prevent app crashes
     globalUserData.completionStats = {
       totalDaysCompleted: 0,
@@ -426,7 +473,7 @@ export const loadUserData = async (userId: string) => {
  */
 export const handleMealCompletion = (userId: string, planId: string, mealIndex: number, mealName: string) => {
   try {
-    console.log(`🍽️ Instant meal completion: ${mealName}`);
+    
     
     // Update completion stats instantly
     const currentStats = globalUserData.completionStats || {};
@@ -471,16 +518,18 @@ export const handleMealCompletion = (userId: string, planId: string, mealIndex: 
     // Also update the database in the background to persist the data
     setTimeout(async () => {
       try {
-        const { addAuraPoints, checkAchievements } = await import('./auraService');
-        await addAuraPoints(userId, 'meal_completion', 3, `Completed meal ${mealIndex + 1}`, { meal_index: mealIndex });
+        const { addAuraPoints, checkAchievements, AURA_EVENT_TYPES, AURA_POINTS } = await import('./auraService');
+        await addAuraPoints(userId, AURA_EVENT_TYPES.MEAL_COMPLETION, AURA_POINTS.MEAL_COMPLETION, `Completed meal ${mealIndex + 1}`, { meal_index: mealIndex });
         // Check for new achievements after meal completion
         await checkAchievements(userId);
+        // Notify listeners after database update to avoid interference
+        notifyListeners();
       } catch (error) {
-        console.error('Error updating aura in database:', error);
+        
       }
     }, 0);
   } catch (error) {
-    console.error('Error in handleMealCompletion:', error);
+    
   }
 };
 
@@ -489,7 +538,7 @@ export const handleMealCompletion = (userId: string, planId: string, mealIndex: 
  */
 export const handleExerciseCompletion = (userId: string, planId: string, exerciseIndex: number, exerciseName: string) => {
   try {
-    console.log(`💪 Instant exercise completion: ${exerciseName}`);
+    
     
     // Update completion stats instantly
     const currentStats = globalUserData.completionStats || {};
@@ -534,16 +583,18 @@ export const handleExerciseCompletion = (userId: string, planId: string, exercis
     // Also update the database in the background to persist the data
     setTimeout(async () => {
       try {
-        const { addAuraPoints, checkAchievements } = await import('./auraService');
-        await addAuraPoints(userId, 'exercise_completion', 10, `Completed exercise ${exerciseIndex + 1}`, { exercise_index: exerciseIndex });
+        const { addAuraPoints, checkAchievements, AURA_EVENT_TYPES, AURA_POINTS } = await import('./auraService');
+        await addAuraPoints(userId, AURA_EVENT_TYPES.EXERCISE_COMPLETION, AURA_POINTS.EXERCISE_COMPLETION, `Completed exercise ${exerciseIndex + 1}`, { exercise_index: exerciseIndex });
         // Check for new achievements after exercise completion
         await checkAchievements(userId);
+        // Notify listeners after database update to avoid interference
+        notifyListeners();
       } catch (error) {
-        console.error('Error updating aura in database:', error);
+        
       }
     }, 0);
   } catch (error) {
-    console.error('Error in handleExerciseCompletion:', error);
+    
   }
 };
 
@@ -551,7 +602,7 @@ export const handleExerciseCompletion = (userId: string, planId: string, exercis
  * Handle day completion with instant updates
  */
 export const handleDayCompletion = (userId: string, planId: string) => {
-  console.log(`📅 Instant day completion`);
+  
   
   // Update completion stats instantly
   const currentStats = globalUserData.completionStats;
@@ -583,18 +634,18 @@ export const handleDayCompletion = (userId: string, planId: string) => {
 };
 
 /**
- * Handle bulk meal completion with instant updates
+ * Handle bulk meal completion with instant updates - only for remaining uncompleted meals
  */
-export const handleBulkMealCompletion = (userId: string, planId: string, mealCount: number) => {
+export const handleBulkMealCompletion = (userId: string, planId: string, remainingMealCount: number) => {
   try {
-    console.log(`🍽️ Instant bulk meal completion: ${mealCount} meals`);
     
-    // Update completion stats instantly
+    
+    // Update completion stats instantly - only for remaining meals
     const currentStats = globalUserData.completionStats || {};
     const updatedStats = {
       ...currentStats,
-      totalMealsCompleted: (currentStats.totalMealsCompleted || 0) + mealCount,
-      mealsCompletedToday: (currentStats.mealsCompletedToday || 0) + mealCount,
+      totalMealsCompleted: (currentStats.totalMealsCompleted || 0) + remainingMealCount,
+      mealsCompletedToday: (currentStats.mealsCompletedToday || 0) + remainingMealCount,
       lastUpdated: new Date().toISOString()
     };
     
@@ -617,9 +668,9 @@ export const handleBulkMealCompletion = (userId: string, planId: string, mealCou
     // as that's only for full day completion
     updateCompletedDays(userId, updatedDaysSet);
     
-    // Update aura instantly - add 3 points per meal completion
+    // Update aura instantly - add 3 points per remaining meal completion only
     const currentAura = globalUserData.auraSummary || {};
-    const auraPoints = mealCount * 3;
+    const auraPoints = remainingMealCount * 3;
     const updatedAura = {
       ...currentAura,
       total_aura: (currentAura.total_aura || 0) + auraPoints,
@@ -632,30 +683,34 @@ export const handleBulkMealCompletion = (userId: string, planId: string, mealCou
     // Also update the database in the background to persist the data
     setTimeout(async () => {
       try {
-        const { addAuraPoints } = await import('./auraService');
-        await addAuraPoints(userId, 'bulk_meal_completion', auraPoints, `Completed all ${mealCount} meals`, { meal_count: mealCount });
+        const { addAuraPoints, checkAchievements } = await import('./auraService');
+        await addAuraPoints(userId, 'bulk_meal_completion', auraPoints, `Completed ${remainingMealCount} remaining meals`, { meal_count: remainingMealCount });
+        // Check for new achievements after bulk completion
+        await checkAchievements(userId);
+        // Notify listeners after database update to avoid interference
+        notifyListeners();
       } catch (error) {
-        console.error('Error updating aura in database:', error);
+        
       }
     }, 0);
   } catch (error) {
-    console.error('Error in handleBulkMealCompletion:', error);
+    
   }
 };
 
 /**
- * Handle bulk exercise completion with instant updates
+ * Handle bulk exercise completion with instant updates - only for remaining uncompleted exercises
  */
-export const handleBulkExerciseCompletion = (userId: string, planId: string, exerciseCount: number) => {
+export const handleBulkExerciseCompletion = (userId: string, planId: string, remainingExerciseCount: number) => {
   try {
-    console.log(`💪 Instant bulk exercise completion: ${exerciseCount} exercises`);
     
-    // Update completion stats instantly
+    
+    // Update completion stats instantly - only for remaining exercises
     const currentStats = globalUserData.completionStats || {};
     const updatedStats = {
       ...currentStats,
-      totalExercisesCompleted: (currentStats.totalExercisesCompleted || 0) + exerciseCount,
-      exercisesCompletedToday: (currentStats.exercisesCompletedToday || 0) + exerciseCount,
+      totalExercisesCompleted: (currentStats.totalExercisesCompleted || 0) + remainingExerciseCount,
+      exercisesCompletedToday: (currentStats.exercisesCompletedToday || 0) + remainingExerciseCount,
       lastUpdated: new Date().toISOString()
     };
     
@@ -678,9 +733,9 @@ export const handleBulkExerciseCompletion = (userId: string, planId: string, exe
     // as that's only for full day completion
     updateCompletedDays(userId, updatedDaysSet);
     
-    // Update aura instantly - add 10 points per exercise completion
+    // Update aura instantly - add 10 points per remaining exercise completion only
     const currentAura = globalUserData.auraSummary || {};
-    const auraPoints = exerciseCount * 10;
+    const auraPoints = remainingExerciseCount * 10;
     const updatedAura = {
       ...currentAura,
       total_aura: (currentAura.total_aura || 0) + auraPoints,
@@ -693,14 +748,18 @@ export const handleBulkExerciseCompletion = (userId: string, planId: string, exe
     // Also update the database in the background to persist the data
     setTimeout(async () => {
       try {
-        const { addAuraPoints } = await import('./auraService');
-        await addAuraPoints(userId, 'bulk_exercise_completion', auraPoints, `Completed all ${exerciseCount} exercises`, { exercise_count: exerciseCount });
+        const { addAuraPoints, checkAchievements } = await import('./auraService');
+        await addAuraPoints(userId, 'bulk_exercise_completion', auraPoints, `Completed ${remainingExerciseCount} remaining exercises`, { exercise_count: remainingExerciseCount });
+        // Check for new achievements after bulk completion
+        await checkAchievements(userId);
+        // Notify listeners after database update to avoid interference
+        notifyListeners();
       } catch (error) {
-        console.error('Error updating aura in database:', error);
+        
       }
     }, 0);
   } catch (error) {
-    console.error('Error in handleBulkExerciseCompletion:', error);
+    
   }
 };
 
@@ -708,7 +767,7 @@ export const handleBulkExerciseCompletion = (userId: string, planId: string, exe
  * Handle plan regeneration with instant updates
  */
 export const handlePlanRegeneration = (userId: string, newPlan: any) => {
-  console.log(`🔄 Instant plan regeneration`);
+  
   
   // Update both user plan and stored plan instantly
   updateUserPlan(userId, newPlan);
@@ -719,7 +778,7 @@ export const handlePlanRegeneration = (userId: string, newPlan: any) => {
  * Handle plan swap with instant updates
  */
 export const handlePlanSwap = async (userId: string, updatedPlan: any) => {
-  console.log(`🔄 Instant plan swap update`);
+  
   
   if (updatedPlan) {
     // Update stored plan instantly to reflect the swap
@@ -729,7 +788,7 @@ export const handlePlanSwap = async (userId: string, updatedPlan: any) => {
     updateUserPlan(userId, updatedPlan);
   } else {
     // If no plan provided, reload from database to get latest changes
-    console.log('🔄 Reloading plan data from database after swap...');
+    
     await loadUserData(userId);
   }
 };

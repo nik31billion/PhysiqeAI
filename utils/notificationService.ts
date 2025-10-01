@@ -56,7 +56,7 @@ export class NotificationService {
 
     // Check if running in Expo Go
     if (this.isExpoGo) {
-      console.warn('⚠️ Notifications are not fully supported in Expo Go. Please use a development build for full functionality.');
+      
       this.isInitialized = true;
       return true; // Return true but with limited functionality
     }
@@ -72,7 +72,7 @@ export class NotificationService {
       }
 
       if (finalStatus !== 'granted') {
-        console.log('Notification permissions not granted');
+        
         return false;
       }
 
@@ -87,10 +87,10 @@ export class NotificationService {
       }
 
       this.isInitialized = true;
-      console.log('Notification service initialized successfully');
+      
       return true;
     } catch (error) {
-      console.error('Failed to initialize notification service:', error);
+      
       return false;
     }
   }
@@ -123,7 +123,7 @@ export class NotificationService {
       }
       return this.getDefaultPreferences();
     } catch (error) {
-      console.error('Failed to load notification preferences:', error);
+      
       return this.getDefaultPreferences();
     }
   }
@@ -135,7 +135,7 @@ export class NotificationService {
     try {
       await AsyncStorage.setItem(`notification_preferences_${userId}`, JSON.stringify(preferences));
     } catch (error) {
-      console.error('Failed to save notification preferences:', error);
+      
     }
   }
 
@@ -150,7 +150,7 @@ export class NotificationService {
 
     // Skip scheduling in Expo Go
     if (this.isExpoGo) {
-      console.log('📱 Expo Go detected: Notifications will be shown as in-app toasts only');
+      
       return;
     }
 
@@ -173,9 +173,9 @@ export class NotificationService {
         await this.scheduleStreakReminder(preferences.streakTime);
       }
 
-      console.log('Recurring notifications scheduled successfully');
+      
     } catch (error) {
-      console.error('Failed to schedule recurring notifications:', error);
+      
     }
   }
 
@@ -254,7 +254,7 @@ export class NotificationService {
   async sendImmediateNotification(message: NotificationMessage): Promise<void> {
     // In Expo Go, we'll rely on in-app toasts instead of system notifications
     if (this.isExpoGo) {
-      console.log('📱 Expo Go: Would show notification:', message.title, message.body);
+      
       return;
     }
 
@@ -270,7 +270,7 @@ export class NotificationService {
 
       this.notificationIds.push(notificationId);
     } catch (error) {
-      console.error('Failed to send immediate notification:', error);
+      
     }
   }
 
@@ -343,9 +343,9 @@ export class NotificationService {
     try {
       await Notifications.cancelAllScheduledNotificationsAsync();
       this.notificationIds = [];
-      console.log('All notifications cancelled');
+      
     } catch (error) {
-      console.error('Failed to cancel notifications:', error);
+      
     }
   }
 
@@ -356,7 +356,7 @@ export class NotificationService {
     try {
       return await Notifications.getAllScheduledNotificationsAsync();
     } catch (error) {
-      console.error('Failed to get scheduled notifications:', error);
+      
       return [];
     }
   }
@@ -374,7 +374,7 @@ export class NotificationService {
       const { status } = await Notifications.getPermissionsAsync();
       return status === 'granted';
     } catch (error) {
-      console.error('Failed to check notification permissions:', error);
+      
       return false;
     }
   }

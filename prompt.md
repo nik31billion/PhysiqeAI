@@ -21,9 +21,15 @@ Generate a fully personalized 7-day workout and 7-day meal plan for the followin
 
 **Instructions:**
 - For the workout plan: Provide daily exercise routines, workout type (push/pull/legs/cardio), number of sets/reps or minutes, rest days, and match difficulty to fitness level.
-- For the meal plan: Provide daily meal breakdowns (breakfast, lunch, dinner, snacks), and ensure each day’s total calories ≈ {targetCalories}. List key macros (protein, carbs, fat) per meal if possible.
+- For the meal plan: Provide daily meal breakdowns (breakfast, lunch, dinner, snacks), and ensure each day's total calories ≈ {targetCalories}. List key macros (protein, carbs, fat) per meal if possible.
+- **CRITICAL HEALTH REQUIREMENTS FOR MEALS:**
+  * ONLY use healthy, nutritious whole foods (lean proteins, vegetables, fruits, whole grains, healthy fats)
+  * NEVER include junk food, processed foods, or unhealthy snacks (no donuts, chips, candy, fast food, etc.)
+  * Prioritize nutrient-dense foods that support fitness goals
+  * Focus on clean eating principles unless user explicitly requests otherwise
+  * Use fresh, minimally processed ingredients
 - Avoid all user allergies and restrictions.
-- Use user’s diet and cuisine if possible (e.g. Indian, Asian, etc. if relevant).
+- Use user's diet and cuisine if possible (e.g. Indian, Asian, etc. if relevant).
 - Format output as JSON only, with two top-level keys: `workout` and `diet`.
 
 **Example Output:**

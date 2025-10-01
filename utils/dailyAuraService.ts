@@ -45,7 +45,6 @@ export async function handleDailyCheckin(userId: string): Promise<{ success: boo
 
     return { success: true, auraEarned: AURA_POINTS.DAILY_CHECKIN };
   } catch (error) {
-    console.error('Error handling daily check-in:', error);
     return { success: false, error: 'Failed to handle daily check-in' };
   }
 }
@@ -88,7 +87,6 @@ export async function handlePlanTweakRequest(userId: string): Promise<{ success:
     await checkAchievements(userId);
     return { success: true, auraEarned: AURA_POINTS.PLAN_TWEAK_REQUEST };
   } catch (error) {
-    console.error('Error handling plan tweak request:', error);
     return { success: false, error: 'Failed to handle plan tweak request' };
   }
 }
@@ -126,7 +124,6 @@ export async function handleFriendReferral(userId: string, referredUserId: strin
     await checkAchievements(userId);
     return { success: true, auraEarned: AURA_POINTS.FRIEND_REFERRAL };
   } catch (error) {
-    console.error('Error handling friend referral:', error);
     return { success: false, error: 'Failed to handle friend referral' };
   }
 }
@@ -156,7 +153,6 @@ export async function handleMilestoneAchievement(
     await checkAchievements(userId);
     return { success: true, auraEarned: auraReward };
   } catch (error) {
-    console.error('Error handling milestone achievement:', error);
     return { success: false, error: 'Failed to handle milestone achievement' };
   }
 }
@@ -177,7 +173,6 @@ export async function performDailyMaintenance(userId: string): Promise<{ success
     
     return { success: true };
   } catch (error) {
-    console.error('Error performing daily maintenance:', error);
     return { success: false, error: 'Failed to perform daily maintenance' };
   }
 }
@@ -225,7 +220,6 @@ export async function checkMissedActivities(userId: string): Promise<{ success: 
     
     return { success: true, penaltiesApplied };
   } catch (error) {
-    console.error('Error checking missed activities:', error);
     return { success: false, error: 'Failed to check missed activities' };
   }
 }
@@ -302,7 +296,6 @@ export async function getDailyAuraSummary(userId: string): Promise<{
       },
     };
   } catch (error) {
-    console.error('Error getting daily aura summary:', error);
     return { success: false, error: 'Failed to get daily aura summary' };
   }
 }

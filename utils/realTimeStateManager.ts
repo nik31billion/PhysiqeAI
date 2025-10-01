@@ -30,7 +30,7 @@ class RealTimeStateManager {
    * Update state and notify all subscribers instantly
    */
   updateState(key: string, data: any): void {
-    console.log(`🔄 Real-time state update for: ${key}`);
+    
     
     // Update the state
     this.state.set(key, data);
@@ -45,7 +45,7 @@ class RealTimeStateManager {
         try {
           callback(data);
         } catch (error) {
-          console.error('Error in real-time callback:', error);
+          
         }
       });
     }
@@ -102,7 +102,7 @@ class RealTimeStateManager {
    * Handle meal completion with instant updates
    */
   handleMealCompletion(userId: string, planId: string, mealIndex: number, mealName: string): void {
-    console.log(`🍽️ Real-time meal completion: ${mealName}`);
+    
     
     // Get current completion stats
     const statsKey = dataCache.getCompletionStatsKey(userId);
@@ -143,7 +143,7 @@ class RealTimeStateManager {
    * Handle exercise completion with instant updates
    */
   handleExerciseCompletion(userId: string, planId: string, exerciseIndex: number, exerciseName: string): void {
-    console.log(`💪 Real-time exercise completion: ${exerciseName}`);
+    
     
     // Get current completion stats
     const statsKey = dataCache.getCompletionStatsKey(userId);
@@ -184,7 +184,7 @@ class RealTimeStateManager {
    * Handle day completion with instant updates
    */
   handleDayCompletion(userId: string, planId: string): void {
-    console.log(`📅 Real-time day completion`);
+    
     
     // Get current completion stats
     const statsKey = dataCache.getCompletionStatsKey(userId);
@@ -226,7 +226,7 @@ class RealTimeStateManager {
    * Handle plan regeneration with instant updates
    */
   handlePlanRegeneration(userId: string, newPlan: any): void {
-    console.log(`🔄 Real-time plan regeneration`);
+    
     
     // Update both user plan and stored plan
     this.updateUserPlan(userId, newPlan);

@@ -63,7 +63,7 @@ const OnboardingScreen13: React.FC = () => {
     });
     
     if (!success) {
-      console.error('Failed to save onboarding data');
+      
     }
   };
 

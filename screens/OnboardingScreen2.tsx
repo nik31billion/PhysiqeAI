@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,19 +7,37 @@ import {
   TouchableOpacity,
   StatusBar,
   Image,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../utils/AuthContext';
 
 const { width, height } = Dimensions.get('window');
 
 const OnboardingScreen2: React.FC = () => {
   const navigation = useNavigation();
+  const { signInWithGoogle } = useAuth();
+  const [googleLoading, setGoogleLoading] = useState(false);
 
-  const handleGoogleSignIn = () => {
-    // TODO: Implement Google sign-in functionality
-    console.log('Google sign-in pressed');
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    try {
+      const { error } = await signInWithGoogle();
+      
+      if (error) {
+        Alert.alert('Sign In Failed', error.message || 'Google sign-in failed. Please try again.');
+      } else {
+        // Navigation will be handled automatically by AppNavigator
+        // based on user's authentication and onboarding status
+      }
+    } catch (err) {
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setGoogleLoading(false);
+    }
   };
 
   const handleEmailSignUp = () => {
@@ -47,7 +65,7 @@ const OnboardingScreen2: React.FC = () => {
         {/* Logo Container */}
         <View style={styles.logoContainer}>
           <Image
-            source={require('../assets/mascot/flex_aura_logo_no_bg.png')}
+            source={require('../assets/mascot/flex_aura_new_logo_no_bg_2.png')}
             style={styles.logoImage}
             resizeMode="contain"
           />
@@ -61,11 +79,19 @@ const OnboardingScreen2: React.FC = () => {
         {/* Buttons Container */}
         <View style={styles.buttonsContainer}>
           {/* Google Button */}
-          <TouchableOpacity style={styles.googleButton} onPress={handleGoogleSignIn}>
+          <TouchableOpacity 
+            style={[styles.googleButton, googleLoading && styles.buttonDisabled]} 
+            onPress={handleGoogleSignIn}
+            disabled={googleLoading}
+          >
             <View style={styles.googleIconContainer}>
               <Text style={styles.googleIcon}>G</Text>
             </View>
-            <Text style={styles.buttonText}>Continue with Google</Text>
+            {googleLoading ? (
+              <ActivityIndicator size="small" color="#2D2D2D" />
+            ) : (
+              <Text style={styles.buttonText}>Continue with Google</Text>
+            )}
           </TouchableOpacity>
 
           {/* Email Sign Up Button */}
@@ -242,6 +268,9 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     zIndex: 2,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
 });
 

@@ -36,13 +36,13 @@ export async function checkSharingLimits(userId: string): Promise<SharingLimitIn
     });
 
     if (error) {
-      console.error('Error checking sharing limits:', error);
+      
       return null;
     }
 
     return data as SharingLimitInfo;
   } catch (error) {
-    console.error('Error checking sharing limits:', error);
+    
     return null;
   }
 }
@@ -58,13 +58,13 @@ export async function recordShare(userId: string, platform: string): Promise<Sha
     });
 
     if (error) {
-      console.error('Error recording share:', error);
+      
       return { success: false, error: 'Failed to record share' };
     }
 
     return data as ShareResult;
   } catch (error) {
-    console.error('Error recording share:', error);
+    
     return { success: false, error: 'Failed to record share' };
   }
 }
@@ -86,7 +86,7 @@ export async function getSharingStats(userId: string): Promise<{
       .eq('user_id', userId);
 
     if (totalError) {
-      console.error('Error getting total shares:', totalError);
+      
       return null;
     }
 
@@ -101,7 +101,7 @@ export async function getSharingStats(userId: string): Promise<{
       .gte('shared_at', today.toISOString());
 
     if (todayError) {
-      console.error('Error getting today shares:', todayError);
+      
       return null;
     }
 
@@ -116,7 +116,7 @@ export async function getSharingStats(userId: string): Promise<{
       .gte('shared_at', weekAgo.toISOString());
 
     if (weekError) {
-      console.error('Error getting week shares:', weekError);
+      
       return null;
     }
 
@@ -129,7 +129,7 @@ export async function getSharingStats(userId: string): Promise<{
       totalAuraEarned
     };
   } catch (error) {
-    console.error('Error getting sharing stats:', error);
+    
     return null;
   }
 }
@@ -152,13 +152,13 @@ export async function getSharingHistory(userId: string, limit: number = 20): Pro
       .limit(limit);
 
     if (error) {
-      console.error('Error getting sharing history:', error);
+      
       return null;
     }
 
     return data || [];
   } catch (error) {
-    console.error('Error getting sharing history:', error);
+    
     return null;
   }
 }

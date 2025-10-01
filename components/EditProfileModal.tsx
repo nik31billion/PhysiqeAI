@@ -30,6 +30,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({
   onSave,
 }) => {
   const [formData, setFormData] = useState({
+    display_name: '',
     age: '',
     height_cm: '',
     weight_kg: '',
@@ -42,6 +43,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({
   useEffect(() => {
     if (profile) {
       setFormData({
+        display_name: profile.display_name || '',
         age: profile.age?.toString() || '',
         height_cm: profile.height_cm?.toString() || '',
         weight_kg: profile.weight_kg?.toString() || '',
@@ -52,6 +54,15 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
+
+    // Display name validation
+    if (!formData.display_name || formData.display_name.trim().length === 0) {
+      newErrors.display_name = 'Please enter your display name';
+    } else if (formData.display_name.trim().length < 2) {
+      newErrors.display_name = 'Display name must be at least 2 characters';
+    } else if (formData.display_name.trim().length > 50) {
+      newErrors.display_name = 'Display name must be less than 50 characters';
+    }
 
     // Age validation
     const age = parseInt(formData.age);
@@ -89,6 +100,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({
     setLoading(true);
     try {
       const updatedData: Partial<UserProfile> = {
+        display_name: formData.display_name.trim(),
         age: parseInt(formData.age),
         height_cm: parseInt(formData.height_cm),
         weight_kg: parseFloat(formData.weight_kg),
@@ -98,7 +110,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({
       await onSave(updatedData);
       onClose();
     } catch (error) {
-      console.error('Error updating profile:', error);
+      
       Alert.alert('Error', 'Failed to update profile. Please try again.');
     } finally {
       setLoading(false);
@@ -156,6 +168,20 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({
             <View style={styles.form}>
               <View style={styles.formCard}>
                 <Text style={styles.sectionTitle}>Personal Information</Text>
+                
+                {/* Display Name */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Display Name</Text>
+                  <TextInput
+                    style={[styles.input, errors.display_name && styles.inputError]}
+                    value={formData.display_name}
+                    onChangeText={(value) => handleInputChange('display_name', value)}
+                    placeholder="Enter your display name"
+                    maxLength={50}
+                    autoCapitalize="words"
+                  />
+                  {errors.display_name && <Text style={styles.errorText}>{errors.display_name}</Text>}
+                </View>
                 
                 {/* Age */}
                 <View style={styles.inputGroup}>

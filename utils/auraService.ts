@@ -71,6 +71,7 @@ export interface WeightEntry {
 export const AURA_EVENT_TYPES = {
   // Consistency & Streaks
   DAILY_WORKOUT: 'daily_workout',
+  EXERCISE_COMPLETION: 'exercise_completion',
   MEAL_COMPLETION: 'meal_completion',
   ALL_MEALS_DAY: 'all_meals_day',
   SEVEN_DAY_STREAK: 'seven_day_streak',
@@ -102,6 +103,7 @@ export const AURA_EVENT_TYPES = {
 // Aura Point Values
 export const AURA_POINTS = {
   DAILY_WORKOUT: 10,
+  EXERCISE_COMPLETION: 10,
   MEAL_COMPLETION: 3,
   ALL_MEALS_BONUS: 10,
   SEVEN_DAY_STREAK_BONUS: 30,
@@ -140,13 +142,11 @@ export async function getUserAuraSummary(userId: string): Promise<UserAuraSummar
       .maybeSingle(); // Use maybeSingle() instead of single()
 
     if (error) {
-      console.error('Error fetching user aura summary:', error);
       return null;
     }
 
     // If no data exists, create a new Aura summary for the user
     if (!data) {
-      console.log('No Aura summary found, creating new one for user:', userId);
       const { data: newSummary, error: createError } = await supabase
         .from('user_aura_summary')
         .insert({
@@ -163,7 +163,6 @@ export async function getUserAuraSummary(userId: string): Promise<UserAuraSummar
         .single();
 
       if (createError) {
-        console.error('Error creating user aura summary:', createError);
         return null;
       }
 
@@ -172,7 +171,6 @@ export async function getUserAuraSummary(userId: string): Promise<UserAuraSummar
 
     return data;
   } catch (error) {
-    console.error('Error fetching user aura summary:', error);
     return null;
   }
 }
@@ -210,7 +208,6 @@ export async function addAuraPoints(
       });
 
     if (eventError) {
-      console.error('Error inserting aura event:', eventError);
       return { success: false, error: eventError.message };
     }
 
@@ -224,13 +221,11 @@ export async function addAuraPoints(
       .eq('user_id', userId);
 
     if (updateError) {
-      console.error('Error updating user aura summary:', updateError);
       return { success: false, error: updateError.message };
     }
 
     return { success: true, newTotal: newAura };
   } catch (error) {
-    console.error('Error adding aura points:', error);
     return { success: false, error: 'Failed to add aura points' };
   }
 }
@@ -252,13 +247,11 @@ export async function getAuraEvents(
       .range(offset, offset + limit - 1);
 
     if (error) {
-      console.error('Error fetching aura events:', error);
       return { success: false, error: error.message };
     }
 
     return { success: true, data: data || [] };
   } catch (error) {
-    console.error('Error fetching aura events:', error);
     return { success: false, error: 'Failed to fetch aura events' };
   }
 }
@@ -278,13 +271,11 @@ export async function getUserAchievements(userId: string): Promise<{ success: bo
       .order('unlocked_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching user achievements:', error);
       return { success: false, error: error.message };
     }
 
     return { success: true, data: data || [] };
   } catch (error) {
-    console.error('Error fetching user achievements:', error);
     return { success: false, error: 'Failed to fetch user achievements' };
   }
 }
@@ -294,12 +285,10 @@ export async function getUserAchievements(userId: string): Promise<{ success: bo
  */
 export async function checkAchievements(userId: string): Promise<{ success: boolean; newAchievements?: any[]; error?: string }> {
   try {
-    console.log('🔍 Checking achievements for user:', userId);
     
     // Get user's current stats
     const summary = await getUserAuraSummary(userId);
     if (!summary) {
-      console.log('❌ No aura summary found for user');
       return { success: false, error: 'No aura summary found' };
     }
 
@@ -310,7 +299,6 @@ export async function checkAchievements(userId: string): Promise<{ success: bool
       .eq('is_active', true);
 
     if (achievementsError) {
-      console.error('Error fetching achievements:', achievementsError);
       return { success: false, error: 'Failed to fetch achievements' };
     }
 
@@ -321,7 +309,6 @@ export async function checkAchievements(userId: string): Promise<{ success: bool
       .eq('user_id', userId);
 
     if (userAchievementsError) {
-      console.error('Error fetching user achievements:', userAchievementsError);
       return { success: false, error: 'Failed to fetch user achievements' };
     }
 
@@ -386,12 +373,10 @@ export async function checkAchievements(userId: string): Promise<{ success: bool
           shouldUnlock = summary.coach_glo_interactions_today >= 1;
           break;
         default:
-          console.log(`Unknown achievement: ${achievement.id}`);
           continue;
       }
 
       if (shouldUnlock) {
-        console.log(`🎉 Unlocking achievement: ${achievement.name}`);
         
         // Unlock the achievement
         const { error: unlockError } = await supabase
@@ -403,7 +388,6 @@ export async function checkAchievements(userId: string): Promise<{ success: bool
           });
 
         if (unlockError) {
-          console.error('Error unlocking achievement:', unlockError);
           continue;
         }
 
@@ -420,10 +404,8 @@ export async function checkAchievements(userId: string): Promise<{ success: bool
       }
     }
 
-    console.log(`✅ Achievement check complete. New achievements: ${newAchievements.length}`);
     return { success: true, newAchievements };
   } catch (error) {
-    console.error('Error checking achievements:', error);
     return { success: false, error: 'Failed to check achievements' };
   }
 }
@@ -465,7 +447,6 @@ export async function handleDailyWorkoutCompletion(userId: string): Promise<{ su
 
     return { success: true, auraEarned: AURA_POINTS.DAILY_WORKOUT };
   } catch (error) {
-    console.error('Error handling daily workout completion:', error);
     return { success: false, error: 'Failed to handle workout completion' };
   }
 }
@@ -528,7 +509,6 @@ export async function handleMealCompletion(
 
     return { success: true, auraEarned: AURA_POINTS.MEAL_COMPLETION };
   } catch (error) {
-    console.error('Error handling meal completion:', error);
     return { success: false, error: 'Failed to handle meal completion' };
   }
 }
@@ -548,7 +528,6 @@ export async function updateStreak(userId: string): Promise<{ success: boolean; 
       .limit(30);
 
     if (error) {
-      console.error('Error fetching recent workouts:', error);
       return { success: false, error: error.message };
     }
 
@@ -592,7 +571,6 @@ export async function updateStreak(userId: string): Promise<{ success: boolean; 
       .eq('user_id', userId);
 
     if (updateError) {
-      console.error('Error updating streak:', updateError);
       return { success: false, error: updateError.message };
     }
 
@@ -617,7 +595,6 @@ export async function updateStreak(userId: string): Promise<{ success: boolean; 
 
     return { success: true, newStreak: currentStreak };
   } catch (error) {
-    console.error('Error updating streak:', error);
     return { success: false, error: 'Failed to update streak' };
   }
 }
@@ -641,7 +618,6 @@ export async function handleProgressPhotoUpload(userId: string): Promise<{ succe
     await checkAchievements(userId);
     return { success: true, auraEarned: AURA_POINTS.PROGRESS_PHOTO };
   } catch (error) {
-    console.error('Error handling progress photo upload:', error);
     return { success: false, error: 'Failed to handle progress photo upload' };
   }
 }
@@ -665,7 +641,6 @@ export async function handleMeasurementUpdate(userId: string): Promise<{ success
     await checkAchievements(userId);
     return { success: true, auraEarned: AURA_POINTS.MEASUREMENT_UPDATE };
   } catch (error) {
-    console.error('Error handling measurement update:', error);
     return { success: false, error: 'Failed to handle measurement update' };
   }
 }
@@ -716,7 +691,6 @@ export async function handleCoachGloInteraction(userId: string): Promise<{ succe
 
     return { success: true, auraEarned: AURA_POINTS.COACH_GLO_CHAT };
   } catch (error) {
-    console.error('Error handling Coach Glo interaction:', error);
     return { success: false, error: 'Failed to handle Coach Glo interaction' };
   }
 }
@@ -768,7 +742,6 @@ export async function handleGlowCardShare(userId: string): Promise<{ success: bo
     await checkAchievements(userId);
     return { success: true, auraEarned: AURA_POINTS.GLOW_CARD_SHARE };
   } catch (error) {
-    console.error('Error handling Glow Card share:', error);
     return { success: false, error: 'Failed to handle Glow Card share' };
   }
 }
@@ -799,7 +772,6 @@ export async function handleProgressPhotoUploadWithShare(
     
     return result;
   } catch (error) {
-    console.error('Error handling progress photo upload with share:', error);
     return { success: false, error: 'Failed to handle progress photo upload' };
   }
 }
@@ -851,7 +823,6 @@ export async function handleMissedWorkout(userId: string): Promise<{ success: bo
 
     return { success: true, auraLost: Math.abs(AURA_POINTS.MISSED_WORKOUT) };
   } catch (error) {
-    console.error('Error handling missed workout:', error);
     return { success: false, error: 'Failed to handle missed workout' };
   }
 }
@@ -868,13 +839,11 @@ export async function getWeightTracking(userId: string): Promise<{ success: bool
       .order('weight_date', { ascending: false });
 
     if (error) {
-      console.error('Error fetching weight tracking:', error);
       return { success: false, error: error.message };
     }
 
     return { success: true, data: data || [] };
   } catch (error) {
-    console.error('Error fetching weight tracking:', error);
     return { success: false, error: 'Failed to fetch weight tracking' };
   }
 }
@@ -915,7 +884,6 @@ export async function addWeightEntry(
       });
 
     if (error) {
-      console.error('Error adding weight entry:', error);
       return { success: false, error: error.message };
     }
 
@@ -939,7 +907,6 @@ export async function addWeightEntry(
     await checkAchievements(userId);
     return { success: true };
   } catch (error) {
-    console.error('Error adding weight entry:', error);
     return { success: false, error: 'Failed to add weight entry' };
   }
 }
@@ -980,13 +947,11 @@ export async function resetDailyCounters(userId: string): Promise<{ success: boo
       .eq('user_id', userId);
 
     if (error) {
-      console.error('Error resetting daily counters:', error);
       return { success: false, error: error.message };
     }
 
     return { success: true };
   } catch (error) {
-    console.error('Error resetting daily counters:', error);
     return { success: false, error: 'Failed to reset daily counters' };
   }
 }

@@ -4,6 +4,7 @@
 CREATE TABLE IF NOT EXISTS user_profiles (
   id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
   email TEXT,
+  display_name TEXT, -- User's custom display name
   
   -- Onboarding completion status
   onboarding_complete BOOLEAN DEFAULT FALSE,
@@ -45,6 +46,9 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   additional_notes TEXT,
   selected_plan TEXT, -- selected subscription plan
   coupon_code TEXT, -- coupon code for discounts
+  purchase_successful BOOLEAN DEFAULT FALSE, -- whether purchase completed successfully
+  product_identifier TEXT, -- RevenueCat product identifier
+  revenue_cat_user_id TEXT, -- RevenueCat customer ID
   
   -- Profile Picture (OnboardingScreen8)
   profile_picture TEXT, -- user profile picture URI

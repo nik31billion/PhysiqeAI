@@ -46,13 +46,13 @@ export const fetchUserProgressPhotos = async (userId: string): Promise<ProgressP
       .order('taken_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching progress photos:', error);
+      
       throw error;
     }
 
     return data || [];
   } catch (error) {
-    console.error('Error in fetchUserProgressPhotos:', error);
+    
     throw error;
   }
 };
@@ -71,13 +71,13 @@ export const fetchLatestProgressPhoto = async (userId: string): Promise<Progress
       .single();
 
     if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
-      console.error('Error fetching latest progress photo:', error);
+      
       throw error;
     }
 
     return data || null;
   } catch (error) {
-    console.error('Error in fetchLatestProgressPhoto:', error);
+    
     throw error;
   }
 };
@@ -107,13 +107,13 @@ export const createProgressPhoto = async (
       .single();
 
     if (error) {
-      console.error('Error creating progress photo:', error);
+      
       throw error;
     }
 
     return data;
   } catch (error) {
-    console.error('Error in createProgressPhoto:', error);
+    
     throw error;
   }
 };
@@ -134,13 +134,13 @@ export const updateProgressPhoto = async (
       .single();
 
     if (error) {
-      console.error('Error updating progress photo:', error);
+      
       throw error;
     }
 
     return data;
   } catch (error) {
-    console.error('Error in updateProgressPhoto:', error);
+    
     throw error;
   }
 };
@@ -156,11 +156,11 @@ export const deleteProgressPhoto = async (photoId: string): Promise<void> => {
       .eq('id', photoId);
 
     if (error) {
-      console.error('Error deleting progress photo:', error);
+      
       throw error;
     }
   } catch (error) {
-    console.error('Error in deleteProgressPhoto:', error);
+    
     throw error;
   }
 };
@@ -186,7 +186,7 @@ export const getProgressPhotosForComparison = async (userId: string): Promise<{
       allPhotos,
     };
   } catch (error) {
-    console.error('Error in getProgressPhotosForComparison:', error);
+    
     throw error;
   }
 };
@@ -202,13 +202,13 @@ export const getProgressPhotoCount = async (userId: string): Promise<number> => 
       .eq('user_id', userId);
 
     if (error) {
-      console.error('Error getting progress photo count:', error);
+      
       throw error;
     }
 
     return count || 0;
   } catch (error) {
-    console.error('Error in getProgressPhotoCount:', error);
+    
     throw error;
   }
 };
@@ -263,7 +263,7 @@ export const getProgressPhotosByMonth = async (userId: string): Promise<{
 
     return groupedPhotos;
   } catch (error) {
-    console.error('Error in getProgressPhotosByMonth:', error);
+    
     throw error;
   }
 };

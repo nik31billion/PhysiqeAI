@@ -9,21 +9,28 @@ import {
   Image,
   Animated,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useOnboardingNavigation } from '../utils/useOnboardingNavigation';
 import { OnboardingErrorHandler } from '../components/OnboardingErrorHandler';
+import { useRevenueCat } from '../utils/RevenueCatContext';
+import Purchases from 'react-native-purchases';
 
 const { width, height } = Dimensions.get('window');
 
 const OnboardingScreen21: React.FC = () => {
   const navigation = useNavigation();
   const { navigateToNextStep, isSaving, error } = useOnboardingNavigation();
+  const { offerings, fetchOfferings, loading: rcLoading, customerInfo } = useRevenueCat();
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('monthly');
   const [couponCode, setCouponCode] = useState('');
   const [showValidationError, setShowValidationError] = useState(false);
+  const [offeringsError, setOfferingsError] = useState<string | null>(null);
+  const [purchasing, setPurchasing] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
   
   // Animation values
   const glowAnimation = useRef(new Animated.Value(0)).current;
@@ -46,29 +53,127 @@ const OnboardingScreen21: React.FC = () => {
     );
     glowLoop.start();
 
+    // Fetch RevenueCat offerings
+    const loadOfferings = async () => {
+      try {
+        setOfferingsError(null);
+        await fetchOfferings();
+      } catch (error) {
+        console.error('Error fetching offerings:', error);
+        setOfferingsError('Failed to load subscription plans. Please check your internet connection.');
+      }
+    };
+
+    loadOfferings();
 
     return () => {
       glowLoop.stop();
     };
   }, []);
 
+  // Helper function to get monthly package from offerings
+  const getMonthlyPackage = () => {
+    if (!offerings?.current?.monthly) return null;
+    return offerings.current.monthly;
+  };
+
+  // Helper function to get annual package from offerings
+  const getAnnualPackage = () => {
+    // Debug logging
+    console.log('🔍 Checking for annual package...');
+    console.log('offerings:', offerings);
+    console.log('offerings.current:', offerings?.current);
+    console.log('offerings.current.availablePackages:', offerings?.current?.availablePackages);
+    
+    if (!offerings?.current?.annual) {
+      console.log('❌ No annual package found in offerings.current.annual');
+      console.log('Available package identifiers:', 
+        offerings?.current?.availablePackages?.map((pkg: any) => pkg.identifier)
+      );
+      return null;
+    }
+    console.log('✅ Annual package found:', offerings.current.annual);
+    return offerings.current.annual;
+  };
+
+  // Helper function to format price
+  const formatPrice = (packageItem: any) => {
+    if (!packageItem?.product?.priceString) return 'Loading...';
+    return packageItem.product.priceString;
+  };
+
+  // Helper function to get package identifier for selected plan
+  const getSelectedPackage = () => {
+    if (selectedPlan === 'monthly') return getMonthlyPackage();
+    if (selectedPlan === 'annual') return getAnnualPackage();
+    return null;
+  };
+
   const handleContinue = async () => {
-    // Validation: A plan must be selected
-    if (!selectedPlan) {
+    // Validation: A plan must be selected and package available
+    const selectedPackage = getSelectedPackage();
+    if (!selectedPlan || !selectedPackage) {
       setShowValidationError(true);
       return;
     }
 
     setShowValidationError(false);
-    
-    const stepData = {
-      selected_plan: selectedPlan,
-      coupon_code: couponCode || undefined,
-    };
+    setPurchaseError(null);
+    setPurchasing(true);
 
-    const success = await navigateToNextStep(21, stepData);
-    if (!success) {
-      console.error('Failed to save onboarding data');
+    try {
+      console.log('🛒 Starting purchase for package:', selectedPackage.identifier);
+      
+      // Make the purchase using RevenueCat
+      const { customerInfo, productIdentifier } = await Purchases.purchasePackage(selectedPackage);
+      
+      console.log('✅ Purchase successful!', {
+        productIdentifier,
+        activeEntitlements: Object.keys(customerInfo.entitlements.active),
+        originalAppUserId: customerInfo.originalAppUserId
+      });
+
+      // Check if user now has active entitlements
+      const hasActiveSubscription = Object.keys(customerInfo.entitlements.active).length > 0;
+      
+      if (hasActiveSubscription) {
+        console.log('🎉 User now has active subscription!');
+        
+        // Save the purchase info and continue onboarding
+        const stepData = {
+          selected_plan: selectedPlan,
+          coupon_code: couponCode || undefined,
+          purchase_successful: true,
+          product_identifier: productIdentifier,
+          revenue_cat_user_id: customerInfo.originalAppUserId,
+        };
+
+        const success = await navigateToNextStep(21, stepData);
+        if (!success) {
+          console.error('Failed to save step data after successful purchase');
+        }
+      } else {
+        // Purchase completed but no active entitlements
+        setPurchaseError('Purchase completed but subscription is not active. Please contact support.');
+      }
+
+    } catch (error: any) {
+      console.error('❌ Purchase failed:', error);
+      
+      // Handle different types of purchase errors
+      if (error.userCancelled) {
+        setPurchaseError('Purchase was cancelled. You can try again anytime.');
+      } else if (error.code === 'PURCHASE_NOT_ALLOWED_ERROR') {
+        setPurchaseError('Purchases are not allowed on this device. Please check your device settings.');
+      } else if (error.code === 'PAYMENT_PENDING_ERROR') {
+        setPurchaseError('Your payment is pending. You will receive your subscription once payment is confirmed.');
+      } else if (error.code === 'PRODUCT_NOT_AVAILABLE_FOR_PURCHASE_ERROR') {
+        setPurchaseError('This subscription is not available for purchase. Please try again later.');
+      } else {
+        setPurchaseError(error.message || 'Purchase failed. Please check your payment method and try again.');
+      }
+    } finally {
+      setPurchasing(false);
     }
   };
 
@@ -162,48 +267,80 @@ const OnboardingScreen21: React.FC = () => {
         </View>
 
         {/* Plan Options */}
-        <View style={styles.planOptionsContainer}>
-          {/* Monthly Plan */}
-          <TouchableOpacity
-            style={[
-              styles.planCard,
-              selectedPlan === 'monthly' && styles.planCardSelected
-            ]}
-            onPress={() => setSelectedPlan('monthly')}
-          >
-            <Animated.View 
+        {rcLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#4CAF50" />
+            <Text style={styles.loadingText}>Loading subscription plans...</Text>
+          </View>
+        ) : offeringsError ? (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{offeringsError}</Text>
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={async () => {
+                try {
+                  setOfferingsError(null);
+                  await fetchOfferings();
+                } catch (error) {
+                  setOfferingsError('Failed to load subscription plans. Please check your internet connection.');
+                }
+              }}
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.planOptionsContainer}>
+            {/* Monthly Plan */}
+            <TouchableOpacity
               style={[
-                styles.planCardGlow,
-                selectedPlan === 'monthly' && styles.planCardGlowSelected,
-                { opacity: selectedPlan === 'monthly' ? glowOpacity : 0.3 }
+                styles.planCard,
+                selectedPlan === 'monthly' && styles.planCardSelected,
+                !getMonthlyPackage() && styles.planCardDisabled
               ]}
-            />
-            <Text style={styles.planPrice}>$14.99/month</Text>
-            <Text style={styles.planSubtitle}>Pay monthly, cancel anytime</Text>
-          </TouchableOpacity>
+              onPress={() => getMonthlyPackage() && setSelectedPlan('monthly')}
+              disabled={!getMonthlyPackage()}
+            >
+              <Animated.View 
+                style={[
+                  styles.planCardGlow,
+                  selectedPlan === 'monthly' && styles.planCardGlowSelected,
+                  { opacity: selectedPlan === 'monthly' ? glowOpacity : 0.3 }
+                ]}
+              />
+              <Text style={styles.planPrice}>
+                {getMonthlyPackage() ? formatPrice(getMonthlyPackage()) : 'Not Available'}
+              </Text>
+              <Text style={styles.planSubtitle}>Pay monthly, cancel anytime</Text>
+            </TouchableOpacity>
 
-          {/* Annual Plan */}
-          <TouchableOpacity
-            style={[
-              styles.planCard,
-              selectedPlan === 'annual' && styles.planCardSelected
-            ]}
-            onPress={() => setSelectedPlan('annual')}
-          >
-            <Animated.View 
+            {/* Annual Plan */}
+            <TouchableOpacity
               style={[
-                styles.planCardGlow,
-                selectedPlan === 'annual' && styles.planCardGlowSelected,
-                { opacity: selectedPlan === 'annual' ? glowOpacity : 0.3 }
+                styles.planCard,
+                selectedPlan === 'annual' && styles.planCardSelected,
+                !getAnnualPackage() && styles.planCardDisabled
               ]}
-            />
-            <View style={styles.saveTag}>
-              <Text style={styles.saveTagText}>Save 40%</Text>
-            </View>
-            <Text style={styles.planPrice}>$89.99/year</Text>
-            <Text style={styles.planSubtitle}>Best value—unlock a full year comparison for less</Text>
-          </TouchableOpacity>
-        </View>
+              onPress={() => getAnnualPackage() && setSelectedPlan('annual')}
+              disabled={!getAnnualPackage()}
+            >
+              <Animated.View 
+                style={[
+                  styles.planCardGlow,
+                  selectedPlan === 'annual' && styles.planCardGlowSelected,
+                  { opacity: selectedPlan === 'annual' ? glowOpacity : 0.3 }
+                ]}
+              />
+              <View style={styles.saveTag}>
+                <Text style={styles.saveTagText}>Best Value</Text>
+              </View>
+              <Text style={styles.planPrice}>
+                {getAnnualPackage() ? formatPrice(getAnnualPackage()) : 'Not Available'}
+              </Text>
+              <Text style={styles.planSubtitle}>Best value—unlock a full year for less</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Coupon Code */}
         <View style={styles.couponContainer}>
@@ -244,17 +381,26 @@ const OnboardingScreen21: React.FC = () => {
             style={styles.continueButtonWrapper}
             onPress={handleContinue}
             activeOpacity={0.8}
-            disabled={isSaving}
+            disabled={isSaving || purchasing}
           >
             <LinearGradient
-              colors={['#A3F7B5', '#D1F7FF']}
+              colors={purchasing ? ['#FFA726', '#FF7043'] : ['#A3F7B5', '#D1F7FF']}
               style={styles.continueButton}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
             >
-              <Text style={styles.continueButtonText}>
-                Continue
-              </Text>
+              {purchasing ? (
+                <View style={styles.purchasingContainer}>
+                  <ActivityIndicator size="small" color="#1a1a1a" />
+                  <Text style={[styles.continueButtonText, { marginLeft: 8 }]}>
+                    Processing Purchase...
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.continueButtonText}>
+                  Subscribe for {getSelectedPackage() ? formatPrice(getSelectedPackage()) : '₹300.00'}
+                </Text>
+              )}
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -264,6 +410,32 @@ const OnboardingScreen21: React.FC = () => {
           <Text style={styles.validationError}>
             Please select a plan before continuing
           </Text>
+        )}
+
+        {/* Purchase Error */}
+        {purchaseError && (
+          <View style={styles.purchaseErrorContainer}>
+            <Text style={styles.purchaseErrorText}>{purchaseError}</Text>
+            <TouchableOpacity
+              style={styles.retryPurchaseButton}
+              onPress={() => {
+                setPurchaseError(null);
+                handleContinue();
+              }}
+            >
+              <Text style={styles.retryPurchaseButtonText}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Debug Info - Remove this in production */}
+        {__DEV__ && offerings && (
+          <View style={styles.debugContainer}>
+            <Text style={styles.debugTitle}>Debug - Offerings Structure:</Text>
+            <Text style={styles.debugText}>
+              {JSON.stringify(offerings, null, 2)}
+            </Text>
+          </View>
         )}
 
         {/* Footer Notes */}
@@ -558,6 +730,99 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     fontWeight: '500',
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    width: '100%',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  errorContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 30,
+    width: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 16,
+    marginBottom: 15,
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#E53E3E',
+    textAlign: 'center',
+    marginBottom: 15,
+    paddingHorizontal: 20,
+    lineHeight: 20,
+  },
+  retryButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  planCardDisabled: {
+    opacity: 0.5,
+  },
+  debugContainer: {
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderRadius: 8,
+    padding: 10,
+    marginVertical: 10,
+    maxHeight: 200,
+    width: '100%',
+  },
+  debugTitle: {
+    color: '#4CAF50',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 5,
+  },
+  debugText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontFamily: 'Courier',
+  },
+  purchasingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  purchaseErrorContainer: {
+    backgroundColor: 'rgba(244, 67, 54, 0.1)',
+    borderRadius: 12,
+    padding: 15,
+    marginTop: 10,
+    width: '100%',
+    alignItems: 'center',
+  },
+  purchaseErrorText: {
+    fontSize: 14,
+    color: '#D32F2F',
+    textAlign: 'center',
+    marginBottom: 10,
+    lineHeight: 20,
+  },
+  retryPurchaseButton: {
+    backgroundColor: '#D32F2F',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  retryPurchaseButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

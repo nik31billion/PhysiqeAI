@@ -66,7 +66,7 @@ const ProgressPhotoModal: React.FC<ProgressPhotoModalProps> = ({
         setSelectedImage(result.assets[0].uri);
       }
     } catch (error) {
-      console.error('Error picking image:', error);
+      
       Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
   };
@@ -95,7 +95,7 @@ const ProgressPhotoModal: React.FC<ProgressPhotoModalProps> = ({
         setSelectedImage(result.assets[0].uri);
       }
     } catch (error) {
-      console.error('Error capturing image:', error);
+      
       Alert.alert('Error', 'Failed to capture image. Please try again.');
     }
   };
@@ -133,7 +133,7 @@ const ProgressPhotoModal: React.FC<ProgressPhotoModalProps> = ({
       
       Alert.alert('Success', 'Progress photo uploaded successfully!');
     } catch (error) {
-      console.error('Error uploading progress photo:', error);
+      
       Alert.alert('Error', 'Failed to upload progress photo. Please try again.');
     } finally {
       setIsUploading(false);

@@ -2,9 +2,17 @@
 // Uses environment variables from .env file
 
 export const SUPABASE_CONFIG = {
-  url: process.env.EXPO_PUBLIC_SUPABASE_URL || 'YOUR_SUPABASE_URL',
-  anonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'YOUR_SUPABASE_ANON_KEY',
+  url: process.env.EXPO_PUBLIC_SUPABASE_URL || '',
+  anonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
 };
+
+// Validate configuration
+if (!SUPABASE_CONFIG.url || !SUPABASE_CONFIG.anonKey) {
+  console.error('❌ CRITICAL: Supabase configuration is missing!');
+  console.error('Please check your .env file contains:');
+  console.error('EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co');
+  console.error('EXPO_PUBLIC_SUPABASE_ANON_KEY=your-actual-anon-key');
+}
 
 // Environment variables are loaded from .env file
 // Make sure your .env file contains:

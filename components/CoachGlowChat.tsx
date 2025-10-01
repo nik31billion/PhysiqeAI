@@ -9,11 +9,11 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
-  Dimensions
+  Dimensions,
+  Image
 } from 'react-native'
 import { useCoachGlow, useCoachGlowMotivation, useCoachGlowPlanSwaps } from '../utils'
 import { useAuth } from '../utils'
-import { handlePlanSwap } from '../utils/instantDataManager'
 
 interface CoachGlowChatProps {
   visible: boolean
@@ -33,7 +33,6 @@ interface ChatMessage {
   isUser: boolean
   timestamp: Date
   intent?: string
-  actionRequired?: any
 }
 
 const { width, height } = Dimensions.get('window')
@@ -49,9 +48,19 @@ export default function CoachGlowChat({
   const [inputText, setInputText] = useState(initialMessage)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isTyping, setIsTyping] = useState(false)
+  const [typingMessageIndex, setTypingMessageIndex] = useState(0)
   const scrollViewRef = useRef<ScrollView>(null)
+  const typingIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Use different hooks based on mode
+  // Dynamic typing messages to keep it engaging
+  const typingMessages = [
+    "Coach Glow is thinking...",
+    "Analyzing your goals...",
+    "Personalizing advice...",
+    "Almost ready..."
+  ]
+
+  // Use different hooks based on mode  
   const generalCoach = useCoachGlow({ userId: user?.id || '' })
   const motivationCoach = useCoachGlowMotivation(user?.id || '')
   const planSwapCoach = useCoachGlowPlanSwaps(user?.id || '')
@@ -99,6 +108,37 @@ export default function CoachGlowChat({
   }, [coach.chatHistory, messages.length])
 
   useEffect(() => {
+    // Handle dynamic typing messages when coach is loading
+    if (coach.isLoading) {
+      // Reset to first message when starting to type
+      setTypingMessageIndex(0)
+      setIsTyping(true)
+      
+      // Cycle through typing messages every 3 seconds
+      typingIntervalRef.current = setInterval(() => {
+        setTypingMessageIndex((prevIndex) => 
+          (prevIndex + 1) % typingMessages.length
+        )
+      }, 3000)
+    } else {
+      // Clear interval when not loading
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current)
+        typingIntervalRef.current = null
+      }
+      setTypingMessageIndex(0)
+      setIsTyping(false)
+    }
+    
+    // Cleanup interval on unmount
+    return () => {
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current)
+      }
+    }
+  }, [coach.isLoading, typingMessages.length])
+
+  useEffect(() => {
     // Add new message when coach responds
     if (coach.lastResponse) {
       const newMessage: ChatMessage = {
@@ -106,12 +146,11 @@ export default function CoachGlowChat({
         text: coach.lastResponse.response,
         isUser: false,
         timestamp: new Date(),
-        intent: coach.lastResponse.intent,
-        actionRequired: coach.lastResponse.action_required
+        intent: coach.lastResponse.intent
       }
       
       setMessages(prev => [...prev, newMessage])
-      setIsTyping(false)
+      // isTyping is now handled by the coach.isLoading effect above
       
       // Scroll to bottom after adding new message
       setTimeout(() => {
@@ -143,45 +182,21 @@ export default function CoachGlowChat({
       await coach.sendMessage(inputText.trim(), context)
     } catch (error) {
       setIsTyping(false)
-      Alert.alert('Error', 'Failed to send message to Coach Glow')
+      Alert.alert('Connection Issue', 'I had trouble connecting. Please try again.')
     }
   }
 
-  const handleApplySwap = async (actionData: any) => {
-    try {
-      console.log('🔄 Applying swap with data:', actionData)
-      
-      if (actionData.type === 'meal_swap') {
-        // Extract meal type from the data
-        const mealType = actionData.data.mealType || actionData.data.current?.meal || 'meal'
-        console.log(`🍽️ Applying meal swap for ${mealType} on ${actionData.data.day}`)
-        
-        await planSwapCoach.applyMealSwap(
-          actionData.data.day,
-          mealType,
-          actionData.data.suggested
-        )
-      } else if (actionData.type === 'workout_swap') {
-        await planSwapCoach.applyWorkoutSwap(
-          actionData.data.day,
-          actionData.data.suggested
-        )
-      }
-      
-      // Refresh the plan data immediately after successful swap
-      if (user?.id) {
-        console.log('🔄 Refreshing plan data after swap...')
-        // Trigger a plan refresh by calling the instant data manager
-        // This will cause the UI to update immediately
-        await handlePlanSwap(user.id, null) // null will trigger a reload from database
-      }
-      
-      Alert.alert('Success', 'Plan updated successfully!')
-    } catch (error) {
-      console.error('❌ Error applying swap:', error)
-      Alert.alert('Error', 'Failed to apply changes to your plan')
-    }
+  const handleNewChat = () => {
+    // Clear messages and coach history
+    setMessages([])
+    coach.clearChatHistory()
+    
+    // Optional: Show a brief welcome message for new chat
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true })
+    }, 100)
   }
+
 
   const renderMessage = (message: ChatMessage) => (
     <View
@@ -206,20 +221,6 @@ export default function CoachGlowChat({
           {message.text}
         </Text>
         
-        {message.actionRequired && (
-          <View style={styles.actionContainer}>
-            <Text style={styles.actionTitle}>Suggested Change:</Text>
-            <Text style={styles.actionText}>
-              {message.actionRequired.data?.suggested}
-            </Text>
-            <TouchableOpacity
-              style={styles.applyButton}
-              onPress={() => handleApplySwap(message.actionRequired)}
-            >
-              <Text style={styles.applyButtonText}>Apply Change</Text>
-            </TouchableOpacity>
-          </View>
-        )}
         
         <Text style={styles.timestamp}>
           {message.timestamp.toLocaleTimeString([], { 
@@ -236,7 +237,7 @@ export default function CoachGlowChat({
       <View style={[styles.messageBubble, styles.coachBubble]}>
         <View style={styles.typingContainer}>
           <ActivityIndicator size="small" color="#4A90E2" />
-          <Text style={styles.typingText}>Coach Glow is typing...</Text>
+          <Text style={styles.typingText}>{typingMessages[typingMessageIndex]}</Text>
         </View>
       </View>
     </View>
@@ -254,16 +255,25 @@ export default function CoachGlowChat({
         <View style={styles.header}>
           <View style={styles.headerContent}>
             <View style={styles.coachAvatar}>
-              <Text style={styles.coachAvatarText}>✨</Text>
+              <Image
+                source={require('../assets/mascot/flex_aura_new_logo_no_bg_2.png')}
+                style={styles.coachAvatarImage}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.headerText}>
               <Text style={styles.coachName}>Coach Glow</Text>
               <Text style={styles.coachSubtitle}>Your AI Fitness Coach</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-            <Text style={styles.closeButtonText}>✕</Text>
-          </TouchableOpacity>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity style={styles.newChatButton} onPress={handleNewChat}>
+              <Text style={styles.newChatButtonText}>New Chat</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+              <Text style={styles.closeButtonText}>✕</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Messages */}
@@ -352,13 +362,15 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#4A90E2',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12
+    marginRight: 12,
+    overflow: 'hidden'
   },
-  coachAvatarText: {
-    fontSize: 20
+  coachAvatarImage: {
+    width: 40,
+    height: 40
   },
   headerText: {
     flex: 1
@@ -371,6 +383,24 @@ const styles = StyleSheet.create({
   coachSubtitle: {
     fontSize: 14,
     color: '#6B7280'
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  newChatButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#4A90E2',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  newChatButtonText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '600'
   },
   closeButton: {
     width: 32,
@@ -439,37 +469,6 @@ const styles = StyleSheet.create({
   },
   coachText: {
     color: '#1A1A1A'
-  },
-  actionContainer: {
-    marginTop: 12,
-    padding: 12,
-    backgroundColor: '#F0F9FF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#BAE6FD'
-  },
-  actionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0369A1',
-    marginBottom: 4
-  },
-  actionText: {
-    fontSize: 14,
-    color: '#0369A1',
-    marginBottom: 8
-  },
-  applyButton: {
-    backgroundColor: '#0369A1',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    alignSelf: 'flex-start'
-  },
-  applyButtonText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600'
   },
   timestamp: {
     fontSize: 12,

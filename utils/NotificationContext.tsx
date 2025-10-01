@@ -39,7 +39,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       const prefs = await notificationService.loadPreferences(user.id);
       setPreferences(prefs);
     } catch (error) {
-      console.error('Failed to load notification preferences:', error);
+      
     } finally {
       setLoading(false);
     }
@@ -55,7 +55,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       await notificationService.savePreferences(user.id, newPreferences);
       await notificationService.scheduleRecurringNotifications(user.id, newPreferences);
     } catch (error) {
-      console.error('Failed to update notification preferences:', error);
+      
       // Revert on error
       setPreferences(preferences);
     }
@@ -71,11 +71,11 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
         
         // Show info about Expo Go limitations
         if (notificationService.isRunningInExpoGo()) {
-          console.log('📱 Running in Expo Go: System notifications are disabled. In-app notifications will still work.');
+          
         }
       }
     } catch (error) {
-      console.error('Failed to initialize notifications:', error);
+      
     }
   };
 
@@ -87,7 +87,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
 
   const showMilestone = (milestone: string, streakDays?: number) => {
     // This will be handled by the NotificationManager component
-    console.log(`Milestone: ${milestone} (${streakDays} days)`);
+    console.log(`Milestone: ${milestone}${streakDays ? ` (${streakDays} days)` : ''}`);
   };
 
   const value: NotificationContextType = {

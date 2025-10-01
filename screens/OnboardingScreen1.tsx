@@ -60,7 +60,7 @@ const OnboardingScreen1: React.FC = () => {
         {/* Central Logo */}
         <View style={styles.logoContainer}>
           <Image
-            source={require('../assets/mascot/flex_aura_logo_no_bg.png')}
+            source={require('../assets/mascot/flex_aura_new_logo_no_bg_2.png')}
             style={styles.logoImage}
             resizeMode="contain"
           />
@@ -134,8 +134,8 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   logoImage: {
-    width: 200,
-    height: 200,
+    width: 240,
+    height: 240,
   },
   subtitle: {
     fontSize: 18,

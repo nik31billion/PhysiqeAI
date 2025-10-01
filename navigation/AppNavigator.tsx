@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
@@ -7,7 +7,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../utils/AuthContext';
 import { useOnboarding } from '../utils/OnboardingContext';
 import { loadUserData } from '../utils/instantDataManager';
-import { HomeScreen, PlanScreen, ProgressScreen, ProfileScreen, OnboardingScreen1, OnboardingScreen2, OnboardingScreen4, OnboardingScreen5, OnboardingScreen6, OnboardingScreen7, OnboardingScreen8, OnboardingScreen9, OnboardingScreen10, OnboardingScreen11, OnboardingScreen12, OnboardingScreen13, OnboardingScreen14, OnboardingScreen15, OnboardingScreen16, OnboardingScreen17, OnboardingScreen18, SignUpScreen, LoginScreen, SettingsScreen, PrivacyPolicyScreen, TermsAndConditionsScreen } from '../screens';
+import { HomeScreen, PlanScreen, ProgressScreen, ProfileScreen, EditPlanScreen, OnboardingScreen1, OnboardingScreen2, OnboardingScreen4, OnboardingScreen5, OnboardingScreen6, OnboardingScreen7, OnboardingScreen8, OnboardingScreen9, OnboardingScreen10, OnboardingScreen11, OnboardingScreen12, OnboardingScreen13, OnboardingScreen14, OnboardingScreen15, OnboardingScreen16, OnboardingScreen17, OnboardingScreen18, SignUpScreen, LoginScreen, SettingsScreen, PrivacyPolicyScreen, TermsAndConditionsScreen, SubscriptionScreen } from '../screens';
+import FoodScannerScreen from '../screens/FoodScannerScreen';
+import FloatingCameraButton from '../components/FloatingCameraButton';
 import OnboardingScreen19 from '../screens/OnboardingScreen19';
 import OnboardingScreen20 from '../screens/OnboardingScreen20';
 import OnboardingScreen21 from '../screens/OnboardingScreen21';
@@ -65,11 +67,11 @@ const CustomTabBar = ({ state, descriptors, navigation }: any) => {
             <Ionicons
               name={iconName as any}
               size={24}
-              color={isFocused ? '#ffbb5b' : '#a0a0a0'}
+              color={isFocused ? '#FF6F4C' : '#A9A9A9'}
             />
             <Text style={[
               styles.tabLabel,
-              { color: isFocused ? '#ffbb5b' : '#a0a0a0' }
+              { color: isFocused ? '#FF6F4C' : '#A9A9A9' }
             ]}>
               {label}
             </Text>
@@ -81,18 +83,45 @@ const CustomTabBar = ({ state, descriptors, navigation }: any) => {
 };
 
 const MainTabs: React.FC = () => {
+  const navigation = useNavigation();
+
+  const handleScanFood = () => {
+    navigation.navigate('FoodScannerScreen', { scanMode: 'food' });
+  };
+
+  const handleScanBarcode = () => {
+    navigation.navigate('FoodScannerScreen', { scanMode: 'barcode' });
+  };
+
+  const handleScanFoodLabel = () => {
+    navigation.navigate('FoodScannerScreen', { scanMode: 'label' });
+  };
+
+  const handleOpenLibrary = () => {
+    navigation.navigate('FoodScannerScreen', { scanMode: 'library' });
+  };
+
   return (
-    <Tab.Navigator
-      screenOptions={{
-        headerShown: false,
-      }}
-      tabBar={(props) => <CustomTabBar {...props} />}
-    >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Plan" component={PlanScreen} />
-      <Tab.Screen name="Progress" component={ProgressScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
-    </Tab.Navigator>
+    <View style={{ flex: 1 }}>
+      <Tab.Navigator
+        screenOptions={{
+          headerShown: false,
+        }}
+        tabBar={(props) => <CustomTabBar {...props} />}
+      >
+        <Tab.Screen name="Home" component={HomeScreen} />
+        <Tab.Screen name="Plan" component={PlanScreen} />
+        <Tab.Screen name="Progress" component={ProgressScreen} />
+        <Tab.Screen name="Profile" component={ProfileScreen} />
+      </Tab.Navigator>
+      
+      <FloatingCameraButton
+        onScanFood={handleScanFood}
+        onScanBarcode={handleScanBarcode}
+        onScanFoodLabel={handleScanFoodLabel}
+        onOpenLibrary={handleOpenLibrary}
+      />
+    </View>
   );
 };
 
@@ -103,7 +132,7 @@ const AppNavigator: React.FC = () => {
   // Load user data for instant access when authenticated and onboarding is complete
   React.useEffect(() => {
     if (user && isOnboardingComplete) {
-      console.log('🚀 Loading user data for instant access...');
+      
       loadUserData(user.id);
     }
   }, [user, isOnboardingComplete]);
@@ -185,9 +214,12 @@ const AppNavigator: React.FC = () => {
             <Stack.Screen name="OnboardingScreen21" component={OnboardingScreen21} />
             <Stack.Screen name="OnboardingScreen22" component={OnboardingScreen22} />
             <Stack.Screen name="MainTabs" component={MainTabs} />
+            <Stack.Screen name="EditPlanScreen" component={EditPlanScreen} />
+            <Stack.Screen name="FoodScannerScreen" component={FoodScannerScreen} />
             <Stack.Screen name="SettingsScreen" component={SettingsScreen} />
             <Stack.Screen name="PrivacyPolicyScreen" component={PrivacyPolicyScreen} />
             <Stack.Screen name="TermsAndConditionsScreen" component={TermsAndConditionsScreen} />
+            <Stack.Screen name="SubscriptionScreen" component={SubscriptionScreen} />
           </>
         )}
       </Stack.Navigator>
@@ -210,23 +242,23 @@ const styles = StyleSheet.create({
   },
   tabBar: {
     position: 'absolute',
-    bottom: 25,
-    left: 16,
-    right: 16,
+    bottom: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    paddingVertical: 12,
+    backgroundColor: '#141416', // Dark dock background
+    paddingVertical: 16, // Increased vertical padding for pill-like feel
     paddingHorizontal: 20,
+    paddingBottom: 34, // Extra bottom padding for safe area
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 6,
+      height: 8,
     },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
     elevation: 8,
   },
   tabItem: {
@@ -234,11 +266,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 8,
     paddingHorizontal: 4,
+    minHeight: 44, // Minimum tap target height
   },
   tabLabel: {
     fontSize: 12,
     marginTop: 4,
-    fontWeight: '500',
+    fontFamily: 'Poppins-SemiBold', // Button labels: Poppins SemiBold
   },
 });
 

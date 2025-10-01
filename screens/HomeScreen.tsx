@@ -30,9 +30,10 @@ interface ProgressRingProps {
   progress: number;
   size: number;
   strokeWidth: number;
+  isOverLimit?: boolean;
 }
 
-const ProgressRing: React.FC<ProgressRingProps> = ({ progress, size, strokeWidth }) => {
+const ProgressRing: React.FC<ProgressRingProps> = ({ progress, size, strokeWidth, isOverLimit = false }) => {
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
   const strokeDasharray = circumference;
@@ -41,27 +42,21 @@ const ProgressRing: React.FC<ProgressRingProps> = ({ progress, size, strokeWidth
   return (
     <View style={{ width: size, height: size }}>
       <Svg width={size} height={size} style={{ transform: [{ rotate: '-90deg' }] }}>
-        <Defs>
-          <SvgLinearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <Stop offset="0%" stopColor="#ffe8a3" />
-            <Stop offset="100%" stopColor="#ffd86b" />
-          </SvgLinearGradient>
-        </Defs>
-        {/* Background ring */}
+        {/* Background ring - very thin stroke, Ink at 18% opacity */}
         <Circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="#f0f0f0"
+          stroke="rgba(27, 27, 31, 0.18)" // Ink at 18% opacity
           strokeWidth={strokeWidth}
           fill="transparent"
         />
-        {/* Progress ring */}
+        {/* Progress ring - very thin stroke, Dark color for good contrast */}
         <Circle
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="url(#ringGradient)"
+          stroke={isOverLimit ? "#FF3B30" : "#1B1B1F"} // Red when over limit, Ink color normally
           strokeWidth={strokeWidth}
           fill="transparent"
           strokeDasharray={strokeDasharray}
@@ -76,11 +71,19 @@ const ProgressRing: React.FC<ProgressRingProps> = ({ progress, size, strokeWidth
 const HomeScreen: React.FC = () => {
   const { user } = useAuth();
   const navigation = useNavigation();
+  // State for loading management
+  const [isLoadingMealData, setIsLoadingMealData] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  
   // Use instant data hooks for zero-delay updates
   const { profile: userProfile, loading: profileLoading } = useInstantUserProfile(user?.id || null);
   const { plan: userPlan, loading: planLoading } = useInstantUserPlan(user?.id || null);
+  // Only wait for essential data for fast load - don't wait for meal data calculation
   const loading = profileLoading || planLoading;
+  
+  // Other state variables
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDateString, setCurrentDateString] = useState<string>(new Date().toISOString().split('T')[0]);
   const [nextUncompletedMeal, setNextUncompletedMeal] = useState<any>(null);
   const [consumedCalories, setConsumedCalories] = useState(0);
   const [totalCalories, setTotalCalories] = useState(0);
@@ -117,7 +120,6 @@ const HomeScreen: React.FC = () => {
   // Get current day diet from plan
   const getCurrentDayDiet = () => {
     if (!userPlan?.diet_plan) {
-      console.log('🍽️ getCurrentDayDiet - no userPlan or diet_plan');
       return null;
     }
     
@@ -125,14 +127,11 @@ const HomeScreen: React.FC = () => {
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const currentDayName = dayNames[today.getDay()];
     
-    console.log('🍽️ getCurrentDayDiet - currentDayName:', currentDayName);
-    console.log('🍽️ getCurrentDayDiet - available diet days:', userPlan.diet_plan.map((d: any) => d.day));
     
     const foundDiet = userPlan.diet_plan.find((diet: DietPlan) => 
       diet.day.toLowerCase() === currentDayName.toLowerCase()
     );
     
-    console.log('🍽️ getCurrentDayDiet - found diet:', foundDiet);
     return foundDiet;
   };
 
@@ -145,7 +144,6 @@ const HomeScreen: React.FC = () => {
       const nextMeal = await getNextUncompletedMeal(user.id, currentDiet.meals);
       return nextMeal;
     } catch (error) {
-      console.error('Error getting next uncompleted meal:', error);
       return currentDiet.meals[0]; // Fallback to first meal
     }
   };
@@ -159,10 +157,8 @@ const HomeScreen: React.FC = () => {
   // Calculate total calories for the day
   const getTotalCalories = () => {
     const currentDiet = getCurrentDayDiet();
-    console.log('🍽️ getTotalCalories - currentDiet:', currentDiet);
     
     if (!currentDiet?.meals) {
-      console.log('🍽️ getTotalCalories - no meals found, returning 0');
       return 0;
     }
     
@@ -173,11 +169,9 @@ const HomeScreen: React.FC = () => {
         calories = extractCaloriesFromDescription(meal.description);
       }
       
-      console.log('🍽️ getTotalCalories - meal:', meal.meal, 'kcal field:', meal.kcal, 'extracted from description:', calories);
       return total + calories;
     }, 0);
     
-    console.log('🍽️ getTotalCalories - total calculated:', total);
     return total;
   };
 
@@ -211,57 +205,64 @@ const HomeScreen: React.FC = () => {
 
   // Navigation functions
   const navigateToWorkoutTab = () => {
-    console.log('🏋️ Navigating to workout tab');
     (navigation as any).navigate('Plan', { initialTab: 'workouts' });
   };
 
   const navigateToMealsTab = () => {
-    console.log('🍽️ Navigating to meals tab');
     (navigation as any).navigate('Plan', { initialTab: 'meals' });
   };
 
-  // Function to calculate consumed calories from completed meals
+  // Function to calculate consumed calories from completed meals AND food scanner
   const calculateConsumedCalories = async () => {
-    if (!user?.id || !userPlan) {
-      console.log('🍽️ calculateConsumedCalories - no user or userPlan');
+    if (!user?.id) {
       return 0;
     }
     
     try {
-      const currentDiet = getCurrentDayDiet();
-      if (!currentDiet?.meals) {
-        console.log('🍽️ calculateConsumedCalories - no current diet meals');
-        return 0;
-      }
-      
-      const { getCompletedMeals } = await import('../utils/completionService');
-      const completedMealsResult = await getCompletedMeals(user.id);
-      
-      console.log('🍽️ calculateConsumedCalories - completedMealsResult:', completedMealsResult);
-      
-      if (!completedMealsResult.success || !completedMealsResult.data) {
-        console.log('🍽️ calculateConsumedCalories - no completed meals data');
-        return 0;
-      }
-      
-      const completedIndices = new Set(completedMealsResult.data.map(completion => completion.meal_index));
-      console.log('🍽️ calculateConsumedCalories - completedIndices:', Array.from(completedIndices));
-      
-      const consumed = currentDiet.meals
-        .filter((_: any, index: number) => completedIndices.has(index))
-        .reduce((total: number, meal: any) => {
-          // Try to get calories from kcal field first, then from description
-          let calories = meal.kcal || 0;
-          if (calories === 0 && meal.description) {
-            calories = extractCaloriesFromDescription(meal.description);
-          }
+      // Calculate calories from completed planned meals
+      let plannedMealCalories = 0;
+      if (userPlan) {
+        const currentDiet = getCurrentDayDiet();
+        if (currentDiet?.meals) {
+          const { getCompletedMeals } = await import('../utils/completionService');
+          const completedMealsResult = await getCompletedMeals(user.id);
           
-          console.log('🍽️ calculateConsumedCalories - consumed meal:', meal.meal, 'kcal field:', meal.kcal, 'extracted from description:', calories);
-          return total + calories;
-        }, 0);
+          if (completedMealsResult.success && completedMealsResult.data) {
+            const completedIndices = new Set(completedMealsResult.data.map(completion => completion.meal_index));
+            
+            plannedMealCalories = currentDiet.meals
+              .filter((_: any, index: number) => completedIndices.has(index))
+              .reduce((total: number, meal: any) => {
+                // Try to get calories from kcal field first, then from description
+                let calories = meal.kcal || 0;
+                if (calories === 0 && meal.description) {
+                  calories = extractCaloriesFromDescription(meal.description);
+                }
+                
+                return total + calories;
+              }, 0);
+          }
+        }
+      }
       
-      console.log('🍽️ calculateConsumedCalories - total consumed:', consumed);
-      return consumed;
+      // Calculate calories from food scanner entries
+      let scannerCalories = 0;
+      try {
+        const { getDailyNutritionSummary } = await import('../utils/dailyFoodIntakeService');
+        const scannerResult = await getDailyNutritionSummary(user.id);
+        
+        if (scannerResult.success && scannerResult.data) {
+          scannerCalories = scannerResult.data.total_calories || 0;
+        }
+      } catch (scannerError) {
+        console.log('Could not fetch scanner calories:', scannerError);
+        // Continue without scanner calories if service fails
+      }
+      
+      const totalCalories = plannedMealCalories + scannerCalories;
+      console.log(`Total consumed calories: ${totalCalories} (Planned: ${plannedMealCalories}, Scanner: ${scannerCalories})`);
+      
+      return totalCalories;
     } catch (error) {
       console.error('Error calculating consumed calories:', error);
       return 0;
@@ -270,9 +271,14 @@ const HomeScreen: React.FC = () => {
 
   // Function to refresh next uncompleted meal and consumed calories
   const refreshMealData = async () => {
-    if (!user?.id || !userPlan) return;
+    if (!user?.id || !userPlan) {
+      setIsLoadingMealData(false);
+      return;
+    }
     
     try {
+      setIsLoadingMealData(true);
+      
       const [nextMeal, consumed] = await Promise.all([
         getNextUncompletedMealForToday(),
         calculateConsumedCalories()
@@ -287,13 +293,14 @@ const HomeScreen: React.FC = () => {
       // TODO: Add workout completion check when workout service is available
       setHasLoggedWorkoutToday(false);
       
-      console.log('🍽️ refreshMealData - total calories:', total, 'consumed:', consumed, 'hasLoggedMealToday:', hasMeals);
-      
       setNextUncompletedMeal(nextMeal);
       setConsumedCalories(consumed);
       setTotalCalories(total);
+      setIsLoadingMealData(false);
+      setIsInitialLoad(false);
     } catch (error) {
-      console.error('Error refreshing meal data:', error);
+      setIsLoadingMealData(false);
+      setIsInitialLoad(false);
     }
   };
 
@@ -306,32 +313,79 @@ const HomeScreen: React.FC = () => {
     }
   }, [userPlan]);
 
+  // Periodic date check for when app stays open overnight
+  useEffect(() => {
+    const checkDateChange = () => {
+      const newDate = new Date().toISOString().split('T')[0];
+      if (newDate !== currentDateString) {
+        // Date has changed - reset calorie tracking for new day
+        setCurrentDateString(newDate);
+        setCurrentDate(new Date());
+        setConsumedCalories(0);
+        setHasLoggedMealToday(false);
+        setHasLoggedWorkoutToday(false);
+        setNextUncompletedMeal(null);
+        // Refresh meal data for the new day
+        if (user && userPlan) {
+          refreshMealData();
+        }
+      }
+    };
+
+    // Check every minute for date changes
+    const dateCheckInterval = setInterval(checkDateChange, 60000);
+    
+    return () => clearInterval(dateCheckInterval);
+  }, [currentDateString, user, userPlan]);
+
   // Refresh data when app comes back into focus (handles meal completions from PlanScreen)
   useEffect(() => {
     const handleAppStateChange = (nextAppState: string) => {
       if (nextAppState === 'active' && user && userPlan) {
-        console.log('🔄 HomeScreen: App became active, refreshing meal data...');
-        refreshMealData();
+        // Check if the date has changed since last time
+        const newDate = new Date().toISOString().split('T')[0];
+        if (newDate !== currentDateString) {
+          // Date has changed - reset calorie tracking for new day
+          setCurrentDateString(newDate);
+          setCurrentDate(new Date());
+          setConsumedCalories(0);
+          setHasLoggedMealToday(false);
+          setHasLoggedWorkoutToday(false);
+          setNextUncompletedMeal(null);
+          // Refresh meal data for the new day
+          setTimeout(() => {
+            refreshMealData();
+          }, 100);
+        } else {
+          // Same day - just refresh meal data
+          refreshMealData();
+        }
       }
     };
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription?.remove();
-  }, [user, userPlan]);
+  }, [user, userPlan, currentDateString]);
 
   // Refresh meal data when HomeScreen comes into focus
   useFocusEffect(
     React.useCallback(() => {
       if (user && userPlan) {
-        console.log('🔄 HomeScreen: Screen focused, refreshing meal data...');
         refreshMealData();
       }
     }, [user, userPlan])
   );
 
-  // Calculate calorie progress
-  const caloriesLeft = Math.max(0, totalCalories - consumedCalories);
-  const progress = totalCalories > 0 ? (consumedCalories / totalCalories) * 100 : 0;
+  // Calculate calorie progress with overflow handling
+  const caloriesLeft = totalCalories - consumedCalories;
+  const hasExceededLimit = caloriesLeft < 0;
+  const caloriesOver = hasExceededLimit ? Math.round(Math.abs(caloriesLeft)) : 0;
+  const displayCaloriesLeft = Math.round(Math.max(0, caloriesLeft));
+  
+  // Progress calculation: cap at 100% but track if exceeded
+  const rawProgress = totalCalories > 0 ? (consumedCalories / totalCalories) * 100 : 0;
+  const progress = Math.min(100, rawProgress);
+  const isOverLimit = rawProgress > 100;
   
   // Notification triggers
   useNotificationTriggers({
@@ -346,35 +400,30 @@ const HomeScreen: React.FC = () => {
     hasLoggedMealToday,
   });
   
-  console.log('🍽️ HomeScreen render - totalCalories:', totalCalories, 'consumedCalories:', consumedCalories, 'caloriesLeft:', caloriesLeft, 'progress:', progress);
 
   if (loading) {
     return (
-      <LinearGradient
-        colors={['#e9f7fa', '#ffe8db']}
-        style={styles.container}
-      >
+      <View style={styles.container}>
         <StatusBar style="dark" />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#ffbb5b" />
+          <ActivityIndicator size="large" color="#FF6F4C" />
           <Text style={styles.loadingText}>
-            {planLoading ? 'Loading your personalized plan...' : 'Loading your profile...'}
+            {planLoading ? 'Loading your personalized plan...' : 
+             profileLoading ? 'Loading your profile...' :
+             'Loading your data...'}
           </Text>
-          {planLoading && (
-            <Text style={styles.loadingSubtext}>
-              Preparing your daily routine...
-            </Text>
-          )}
+          <Text style={styles.loadingSubtext}>
+            {planLoading ? 'Preparing your daily routine...' :
+             profileLoading ? 'Getting your preferences...' :
+             'Calculating your progress...'}
+          </Text>
         </View>
-      </LinearGradient>
+      </View>
     );
   }
 
   return (
-    <LinearGradient
-      colors={['#e9f7fa', '#ffe8db']}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <StatusBar style="dark" />
       
       <ScrollView
@@ -389,7 +438,7 @@ const HomeScreen: React.FC = () => {
             <View style={styles.headerLeft}>
               <View style={styles.mascotContainer}>
                 <Image
-                  source={require('../assets/mascot/mascot normal no bg.png')}
+                  source={require('../assets/mascot/flex_aura_new_logo_no_bg_2.png')}
                   style={styles.mascotIcon}
                   resizeMode="contain"
                 />
@@ -408,125 +457,132 @@ const HomeScreen: React.FC = () => {
             </View>
           </View>
 
-          {/* Main Card Container */}
-          <View style={styles.cardContainer}>
-            {/* Calorie Progress Ring */}
+          {/* Calories Card - Stat Tile */}
+          <View style={styles.caloriesCard}>
+            <View style={styles.caloriesLabelContainer}>
+              <Text style={styles.caloriesLabel}>
+                {hasExceededLimit ? 'Calories over limit' : 'Calories left'}
+              </Text>
+              {isLoadingMealData && !isInitialLoad && (
+                <ActivityIndicator size="small" color="#1B1B1F" style={styles.smallLoadingIndicator} />
+              )}
+            </View>
             <View style={styles.progressContainer}>
               <View style={styles.progressRingWrapper}>
-                <ProgressRing progress={progress} size={200} strokeWidth={12} />
+                <ProgressRing 
+                  progress={progress} 
+                  size={160} 
+                  strokeWidth={6}
+                  isOverLimit={isOverLimit}
+                />
                 <View style={styles.progressCenter}>
-                  <Text style={styles.caloriesLeftNumber}>{caloriesLeft}</Text>
-                  <Text style={styles.leftText}>left</Text>
-                  <Text style={styles.goalText}>Calories / {totalCalories} kcal</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Aura Points */}
-            <View style={styles.auraPointsContainer}>
-              <View style={styles.auraPointsBadge}>
-                <Image
-                  source={require('../assets/mascot/mascot thumbs up no bg.png')}
-                  style={styles.auraPointsIcon}
-                  resizeMode="contain"
-                />
-                <Text style={styles.auraPointsText}>
-                  Aura Points: <Text style={styles.auraPointsNumber}>+48</Text>
-                </Text>
-              </View>
-            </View>
-
-            {/* Coach Glow Section */}
-            <View style={styles.coachGlowSection}>
-              <View style={styles.coachGlowHeader}>
-                <Image
-                  source={require('../assets/mascot/excited no bg.png')}
-                  style={styles.coachGlowIcon}
-                  resizeMode="contain"
-                />
-                <View style={styles.coachGlowTextContainer}>
-                  <Text style={styles.coachGlowTitle}>Coach Glow ✨</Text>
-                  <Text style={styles.coachGlowSubtitle}>
-                    Ask for motivation, plan swaps, or fitness advice
+                  <Text style={[
+                    styles.caloriesLeftNumber,
+                    hasExceededLimit && styles.caloriesOverNumber
+                  ]}>
+                    {hasExceededLimit ? `+${caloriesOver}` : displayCaloriesLeft}
+                  </Text>
+                  <Text style={[
+                    styles.caloriesLeftText,
+                    hasExceededLimit && styles.caloriesOverText
+                  ]}>
+                    {hasExceededLimit ? 'over' : 'left'}
+                  </Text>
+                  <Text style={styles.caloriesSupportText}>
+                    {Math.round(consumedCalories)} / {Math.round(totalCalories)} kcal
                   </Text>
                 </View>
               </View>
-              
-              <TouchableOpacity 
-                style={styles.coachGlowInputBox}
-                onPress={() => setIsCoachGlowVisible(true)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.coachGlowPlaceholder}>
-                  Ask Coach Glow anything...
-                </Text>
-              </TouchableOpacity>
             </View>
-
-            {/* Plan Summary Cards */}
-            <View style={styles.planCardsContainer}>
-              {/* Workout Card */}
-              <TouchableOpacity 
-                style={[styles.planCard, styles.workoutCard]}
-                onPress={navigateToWorkoutTab}
-                activeOpacity={0.7}
-              >
-                <Image
-                  source={require('../assets/mascot/mascot muscular no bg.png')}
-                  style={styles.planCardIcon}
-                  resizeMode="contain"
-                />
-                <Text style={styles.planCardTitle}>Workout</Text>
-                <Text style={styles.planCardSubtitle}>
-                  {getCurrentDayWorkout()?.routine && getCurrentDayWorkout()?.routine.length > 0 ? 
-                    (() => {
-                      const workout = getCurrentDayWorkout();
-                      if (workout?.routine?.[0]?.exercise === 'Rest') {
-                        return 'Rest Day';
-                      }
-                      // Get the primary workout type from the first exercise
-                      const primaryType = workout?.routine?.[0]?.type;
-                      return primaryType ? `${primaryType.charAt(0).toUpperCase() + primaryType.slice(1)} Day` : 'Workout Day';
-                    })() : 
-                    'Rest Day'
-                  }
-                </Text>
-                <Text style={styles.planCardDetails}>
-                  {getCurrentDayWorkout() ? 
-                    `${getWorkoutDuration()} / ${formatWorkoutTime()}` : 
-                    'No workout scheduled'
-                  }
-                </Text>
-              </TouchableOpacity>
-
-              {/* Meals Card */}
-              <TouchableOpacity 
-                style={[styles.planCard, styles.mealsCard]}
-                onPress={navigateToMealsTab}
-                activeOpacity={0.7}
-              >
-                <Image
-                  source={require('../assets/mascot/mascot relaxed no bg.png')}
-                  style={styles.planCardIcon}
-                  resizeMode="contain"
-                />
-                <Text style={styles.planCardTitle}>Meals</Text>
-                <Text style={styles.planCardSubtitle}>
-                  {nextUncompletedMeal ? 
-                    `${nextUncompletedMeal?.meal}: ${nextUncompletedMeal?.description}` : 
-                    'No meals scheduled'
-                  }
-                </Text>
-                <Text style={styles.planCardDetails}>
-                  {nextUncompletedMeal ? 
-                    `${nextUncompletedMeal?.kcal} kcal` : 
-                    '0 kcal'
-                  }
-                </Text>
-              </TouchableOpacity>
-            </View>
-
           </View>
+
+          {/* Coach Glow Card */}
+          <View style={styles.coachGlowCard}>
+            <View style={styles.coachGlowHeader}>
+              <Image
+                source={require('../assets/mascot/excited no bg.png')}
+                style={styles.coachGlowIcon}
+                resizeMode="contain"
+              />
+              <View style={styles.coachGlowTextContainer}>
+                <Text style={styles.coachGlowTitle}>Coach Glow ✨</Text>
+                <Text style={styles.coachGlowSubtitle}>
+                  Ask for motivation, plan swaps, or fitness advice
+                </Text>
+              </View>
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.coachGlowButton}
+              onPress={() => setIsCoachGlowVisible(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.coachGlowButtonText}>
+                Ask Coach Glow
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Workout Card */}
+          <TouchableOpacity 
+            style={styles.workoutCard}
+            onPress={navigateToWorkoutTab}
+            activeOpacity={0.7}
+          >
+            <Image
+              source={require('../assets/mascot/mascot muscular no bg.png')}
+              style={styles.planCardIcon}
+              resizeMode="contain"
+            />
+            <Text style={styles.planCardTitle}>Workout</Text>
+            <Text style={styles.planCardSubtitle}>
+              {getCurrentDayWorkout()?.routine && getCurrentDayWorkout()?.routine.length > 0 ? 
+                (() => {
+                  const workout = getCurrentDayWorkout();
+                  if (workout?.routine?.[0]?.exercise === 'Rest') {
+                    return 'Rest Day';
+                  }
+                  // Get the primary workout type from the first exercise
+                  const primaryType = workout?.routine?.[0]?.type;
+                  return primaryType ? `${primaryType.charAt(0).toUpperCase() + primaryType.slice(1)} Day` : 'Workout Day';
+                })() : 
+                'Rest Day'
+              }
+            </Text>
+            <Text style={styles.planCardDetails}>
+              {getCurrentDayWorkout() ? 
+                `${getWorkoutDuration()} / ${formatWorkoutTime()}` : 
+                'No workout scheduled'
+              }
+            </Text>
+          </TouchableOpacity>
+
+          {/* Meals Card */}
+          <TouchableOpacity 
+            style={styles.mealsCard}
+            onPress={navigateToMealsTab}
+            activeOpacity={0.7}
+          >
+            <Image
+              source={require('../assets/mascot/mascot relaxed no bg.png')}
+              style={styles.planCardIcon}
+              resizeMode="contain"
+            />
+            <Text style={styles.planCardTitle}>Meals</Text>
+            <Text style={styles.planCardSubtitle}>
+              {nextUncompletedMeal ? 
+                `${nextUncompletedMeal?.meal}: ${nextUncompletedMeal?.description}` : 
+                'No meals scheduled'
+              }
+            </Text>
+            <Text style={styles.planCardDetails}>
+              {nextUncompletedMeal ? 
+                `${nextUncompletedMeal?.kcal} kcal` : 
+                '0 kcal'
+              }
+            </Text>
+          </TouchableOpacity>
+
         </View>
       </ScrollView>
 
@@ -537,13 +593,14 @@ const HomeScreen: React.FC = () => {
         mode="general"
       />
 
-    </LinearGradient>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#F7F3EE', // Canvas - exact Cal AI
   },
   scrollView: {
     flex: 1,
@@ -555,13 +612,13 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 20, // Screen side padding 16-20
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 24,
+    marginBottom: 24, // Vertical gap between blocks 20-24
     paddingTop: 16,
     paddingHorizontal: 4,
     minHeight: 60,
@@ -573,109 +630,93 @@ const styles = StyleSheet.create({
     paddingRight: 12,
   },
   mascotContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
-    shadowColor: '#ffd86b',
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
   },
   mascotIcon: {
-    width: 28,
-    height: 28,
+    width: 80,
+    height: 80,
   },
   greetingContainer: {
     flex: 1,
-    paddingTop: 4,
+    justifyContent: 'center',
+    paddingTop: 16,
+    paddingRight: 10,
   },
   greetingLine1: {
-    fontSize: 24,
-    color: '#1a202c',
-    lineHeight: 28,
-    fontWeight: '800',
-    textShadowColor: 'rgba(255, 255, 255, 0.9)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-    letterSpacing: -0.3,
+    fontSize: 20,
+    fontFamily: 'Poppins-Bold',
+    color: '#1B1B1F', // Ink - primary text
+    lineHeight: 24,
+    letterSpacing: 0.2,
   },
   greetingLine2: {
-    fontSize: 24,
-    color: '#1a202c',
-    lineHeight: 28,
-    fontWeight: '800',
-    textShadowColor: 'rgba(255, 255, 255, 0.9)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-    letterSpacing: -0.3,
+    fontSize: 20,
+    fontFamily: 'Poppins-Bold',
+    color: '#1B1B1F', // Ink - primary text
+    lineHeight: 24,
+    letterSpacing: 0.2,
     marginTop: -2,
   },
   nameText: {
-    fontWeight: '900',
-    color: '#2d3748',
-    textShadowColor: 'rgba(255, 255, 255, 0.95)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
+    fontFamily: 'Poppins-Bold',
+    color: '#1B1B1F', // Ink
   },
   glowText: {
-    fontWeight: '900',
-    color: '#ffd86b',
-    textShadowColor: 'rgba(255, 255, 255, 0.9)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
+    fontFamily: 'Poppins-Bold',
+    color: '#FF6F4C', // Coral accent
   },
   dateContainer: {
     position: 'absolute',
-    top: 20,
+    top: 8,
     right: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.85)',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    backgroundColor: 'rgba(27, 27, 31, 0.06)', // Chip bg
+    borderRadius: 16, // Chip corner radius
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   dateText: {
     fontSize: 10,
-    color: '#6b7280',
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A', // Ash - secondary text
     textAlign: 'right',
-    fontWeight: '500',
-    textShadowColor: 'rgba(0, 0, 0, 0.1)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 1,
-    letterSpacing: 0.1,
   },
-  cardContainer: {
-    backgroundColor: '#ffffff',
-    borderRadius: 28,
-    padding: 24,
-    marginBottom: 20,
+  // A) Calories tile (Pastel Sun #F0BC2F) - exact Cal AI blueprint
+  caloriesCard: {
+    backgroundColor: '#F0BC2F', // Sun yellow
+    borderRadius: 28, // Card corner radius
+    padding: 24, // Card internal padding
+    marginBottom: 24, // Vertical gap between blocks
+    height: 260, // Extended height more to accommodate circle and text properly
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 6,
+      height: 8,
     },
     shadowOpacity: 0.12,
-    shadowRadius: 20,
+    shadowRadius: 18,
     elevation: 8,
+  },
+  caloriesLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  caloriesLabel: {
+    fontSize: 14, // Increased size for better visibility
+    fontFamily: 'Poppins-Bold', // Made bold for better contrast
+    color: '#1B1B1F', // Ink color for better contrast against yellow
+    textAlign: 'center', // Centered
+  },
+  smallLoadingIndicator: {
+    marginLeft: 8,
   },
   progressContainer: {
     alignItems: 'center',
-    marginBottom: 24,
+    justifyContent: 'center', // Center the circle
+    marginBottom: 24, // More space below circle for support text
   },
   progressRingWrapper: {
     position: 'relative',
@@ -688,137 +729,53 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   caloriesLeftNumber: {
-    fontSize: 52,
-    fontWeight: 'bold',
-    color: '#222',
-    lineHeight: 60,
+    fontSize: 32, // Big number at top
+    fontFamily: 'Poppins-Bold',
+    color: '#1B1B1F', // Ink
+    lineHeight: 36,
+    letterSpacing: 0.2,
+    textAlign: 'center',
   },
-  leftText: {
-    fontSize: 18,
-    color: '#888',
-    marginTop: -6,
-  },
-  goalText: {
-    fontSize: 14,
-    color: '#bbb',
+  caloriesLeftText: {
+    fontSize: 14, // "left" text below number
+    fontFamily: 'Poppins-Regular',
+    color: '#1B1B1F', // Ink
+    textAlign: 'center',
     marginTop: 4,
   },
-  auraPointsContainer: {
-    alignItems: 'center',
-    marginBottom: 28,
+  caloriesSupportText: {
+    fontSize: 12, // "Calories / 2520 kcal" text at bottom
+    fontFamily: 'Poppins-Regular',
+    color: '#1B1B1F', // Ink color for better contrast against yellow
+    textAlign: 'center',
+    marginTop: 4,
   },
-  auraPointsBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fffbe9',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 22,
-    shadowColor: '#ffd86b',
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
+  // Overflow styles for when user exceeds calorie limit
+  caloriesOverNumber: {
+    color: '#FF3B30', // Red color to indicate over limit
   },
-  auraPointsIcon: {
-    width: 22,
-    height: 22,
-    marginRight: 8,
+  caloriesOverText: {
+    color: '#FF3B30', // Red color to indicate over limit
   },
-  auraPointsText: {
-    fontSize: 15,
-    color: '#888',
-  },
-  auraPointsNumber: {
-    fontWeight: 'bold',
-    color: '#6f62ff',
-  },
-  planCardsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    gap: 14,
-  },
-  planCard: {
-    flex: 1,
-    borderRadius: 20,
-    padding: 18,
+  // B) Coach Glow card (Neutral white) - exact Cal AI blueprint
+  coachGlowCard: {
+    backgroundColor: '#FFFFFF', // Neutral white
+    borderRadius: 28, // Card corner radius
+    padding: 24, // Card internal padding
+    marginBottom: 24, // Vertical gap between blocks
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 3,
+      height: 8,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  workoutCard: {
-    backgroundColor: '#c8f5e8',
-  },
-  mealsCard: {
-    backgroundColor: '#fff8cd',
-  },
-  planCardIcon: {
-    width: 22,
-    height: 22,
-    marginBottom: 10,
-  },
-  planCardTitle: {
-    fontSize: 17,
-    fontWeight: 'bold',
-    color: '#232323',
-    marginBottom: 6,
-  },
-  planCardSubtitle: {
-    fontSize: 15,
-    color: '#232323',
-    marginBottom: 8,
-    lineHeight: 20,
-  },
-  planCardDetails: {
-    fontSize: 13,
-    color: '#8d9bab',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  loadingText: {
-    fontSize: 18,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 16,
-  },
-  loadingSubtext: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#888',
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  coachGlowSection: {
-    marginBottom: 24,
-    padding: 20,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 8,
   },
   coachGlowHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8, // Between title and body: 6-8
   },
   coachGlowIcon: {
     width: 40,
@@ -829,29 +786,103 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   coachGlowTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1A1A1A',
-    marginBottom: 4,
+    fontSize: 20, // Title: 20/Bold/Ink
+    fontFamily: 'Poppins-Bold',
+    color: '#1B1B1F', // Ink
+    marginBottom: 6, // Between title and body: 6-8
   },
   coachGlowSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: 14, // Description: 14/Ash, max 2 lines
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A', // Ash
+    lineHeight: 20,
   },
-  coachGlowInputBox: {
-    marginTop: 12,
-    backgroundColor: '#F8F9FA',
-    borderColor: '#E1E5E9',
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+  coachGlowButton: {
+    backgroundColor: '#FF6F4C', // Coral
+    borderRadius: 18, // Button corner radius
+    paddingVertical: 14, // Button vertical padding
+    paddingHorizontal: 20,
     alignItems: 'center',
+    marginTop: 16, // Between body and CTA: 16
   },
-  coachGlowPlaceholder: {
-    fontSize: 15,
-    color: '#6B7280',
-    fontWeight: '500',
+  coachGlowButtonText: {
+    fontSize: 16, // Button labels: Poppins SemiBold 16, white on Coral
+    fontFamily: 'Poppins-SemiBold',
+    color: '#FFFFFF', // White on Coral
+  },
+  // C) Workout tile (Pastel Mint) - exact Cal AI blueprint
+  workoutCard: {
+    backgroundColor: '#C9F3C5', // Mint tile
+    borderRadius: 28, // Card corner radius
+    padding: 24, // Card internal padding
+    marginBottom: 24, // Vertical gap between blocks
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  // D) Meals tile (Pastel Sun) - exact Cal AI blueprint
+  mealsCard: {
+    backgroundColor: '#F0BC2F', // Sun tile
+    borderRadius: 28, // Card corner radius
+    padding: 24, // Card internal padding
+    marginBottom: 24, // Vertical gap between blocks
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  planCardIcon: {
+    width: 22,
+    height: 22,
+    marginBottom: 10,
+  },
+  planCardTitle: {
+    fontSize: 20, // Title: 20/Bold/Ink
+    fontFamily: 'Poppins-Bold',
+    color: '#1B1B1F', // Ink - must be Ink on pastel
+    marginBottom: 6, // Between title and subtitle: 6-8
+  },
+  planCardSubtitle: {
+    fontSize: 14, // Subtitle: 14/Ash
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A', // Ash
+    marginBottom: 4, // Between subtitle and meta: 4-6
+    lineHeight: 20,
+  },
+  planCardDetails: {
+    fontSize: 12, // Meta line: 12/Ash
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A', // Ash
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  loadingText: {
+    fontSize: 18,
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A', // Ash
+    textAlign: 'center',
+    marginTop: 16,
+  },
+  loadingSubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A', // Ash
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });
 

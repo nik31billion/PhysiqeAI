@@ -14,6 +14,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import ViewShot from 'react-native-view-shot';
 import { Share } from 'react-native';
+import * as FileSystem from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
 import { UserAuraSummary, getAuraLevel } from '../utils/auraService';
 import { checkSharingLimits, recordShare, SharingLimitInfo } from '../utils/sharingLimitService';
 
@@ -61,7 +63,7 @@ const SocialShareModal: React.FC<SocialShareModalProps> = ({
       const limits = await checkSharingLimits(userId);
       setSharingLimits(limits);
     } catch (error) {
-      console.error('Error loading sharing limits:', error);
+      
     } finally {
       setIsLoadingLimits(false);
     }
@@ -84,7 +86,7 @@ const SocialShareModal: React.FC<SocialShareModalProps> = ({
         await loadSharingLimits();
       }
     } catch (error) {
-      console.error('Error recording share:', error);
+      
     }
   };
 
@@ -113,7 +115,7 @@ const SocialShareModal: React.FC<SocialShareModalProps> = ({
       const uri = await captureMethod();
       return uri;
     } catch (error) {
-      console.error('Error capturing card:', error);
+      
       return null;
     } finally {
       setIsCapturing(false);
@@ -128,37 +130,78 @@ const SocialShareModal: React.FC<SocialShareModalProps> = ({
         return;
       }
 
-      const message = `🔥 ${getMotivationalMessage()} 
+      const message = `🔥 Check out my fitness progress! 
 
-✨ ${totalAura} Aura Points
-🏆 Best Streak: ${bestStreak} days
-💪 Current Streak: ${currentStreak} days
+✨ ${totalAura} Aura Points earned
+💪 ${currentStreak} day streak going strong!
 
-Get your Aura on Flex Aura! 
+Building momentum with Flex Aura - the AI-powered fitness app that tracks your glow journey! 
+
+Download Flex Aura and start your own glow streak! 
 #FlexAura #GlowUp #FitnessJourney #AuraPoints`;
 
-      // Try WhatsApp deep link first
-      const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(message)}`;
-      const canOpenWhatsApp = await Linking.canOpenURL(whatsappUrl);
+      // Share with image as the primary content
+      const shareOptions = {
+        title: `${userName}'s Glow Card`,
+        message: message,
+        url: imageUri,
+        type: 'image/jpeg',
+      };
+
+      const result = await Share.share(shareOptions);
       
-      if (canOpenWhatsApp) {
-        await Linking.openURL(whatsappUrl);
+      if (result.action === Share.sharedAction) {
         await recordShareAndAura('whatsapp');
         onClose();
-      } else {
-        // Fall back to general sharing
-        await shareToGeneral();
+      } else if (result.action === Share.dismissedAction) {
+        // User cancelled, no need to show error
+        return;
       }
     } catch (error) {
-      console.error('Error sharing to WhatsApp:', error);
+      
       Alert.alert('Error', 'Failed to share to WhatsApp');
     }
   };
 
   const shareToInstagram = async () => {
-    // Instagram doesn't support direct sharing via deep links
-    // Fall back to general sharing
-    await shareToGeneral();
+    try {
+      const imageUri = await captureCard();
+      if (!imageUri) {
+        Alert.alert('Error', 'Failed to capture image');
+        return;
+      }
+
+      const message = `🔥 Check out my fitness progress! 
+
+✨ ${totalAura} Aura Points earned
+💪 ${currentStreak} day streak going strong!
+
+Building momentum with Flex Aura - the AI-powered fitness app! 
+
+Download Flex Aura and start your own glow streak! 
+#FlexAura #GlowUp #FitnessJourney #AuraPoints`;
+
+      // Share with image as the primary content
+      const shareOptions = {
+        title: `${userName}'s Glow Card`,
+        message: message,
+        url: imageUri,
+        type: 'image/jpeg',
+      };
+
+      const result = await Share.share(shareOptions);
+      
+      if (result.action === Share.sharedAction) {
+        await recordShareAndAura('instagram');
+        onClose();
+      } else if (result.action === Share.dismissedAction) {
+        // User cancelled, no need to show error
+        return;
+      }
+    } catch (error) {
+      
+      Alert.alert('Error', 'Failed to share to Instagram');
+    }
   };
 
   const shareToTwitter = async () => {
@@ -169,36 +212,78 @@ Get your Aura on Flex Aura!
         return;
       }
 
-      const message = `🔥 ${getMotivationalMessage()} 
+      const message = `🔥 Check out my fitness progress! 
 
-✨ ${totalAura} Aura Points
-💪 ${currentStreak} day streak!
+✨ ${totalAura} Aura Points earned
+💪 ${currentStreak} day streak going strong!
 
-Get your Aura on Flex Aura! 
+Building momentum with Flex Aura - the AI-powered fitness app! 
+
+Download Flex Aura and start your own glow streak! 
 #FlexAura #GlowUp #FitnessJourney #AuraPoints`;
 
-      // Try X deep link first
-      const twitterUrl = `twitter://post?message=${encodeURIComponent(message)}`;
-      const canOpenTwitter = await Linking.canOpenURL(twitterUrl);
+      // Share with image as the primary content
+      const shareOptions = {
+        title: `${userName}'s Glow Card`,
+        message: message,
+        url: imageUri,
+        type: 'image/jpeg',
+      };
+
+      const result = await Share.share(shareOptions);
       
-      if (canOpenTwitter) {
-        await Linking.openURL(twitterUrl);
+      if (result.action === Share.sharedAction) {
         await recordShareAndAura('x');
         onClose();
-      } else {
-        // Fall back to general sharing
-        await shareToGeneral();
+      } else if (result.action === Share.dismissedAction) {
+        // User cancelled, no need to show error
+        return;
       }
     } catch (error) {
-      console.error('Error sharing to X:', error);
+      
       Alert.alert('Error', 'Failed to share to X');
     }
   };
 
   const shareToFacebook = async () => {
-    // Facebook doesn't support direct sharing via deep links
-    // Fall back to general sharing
-    await shareToGeneral();
+    try {
+      const imageUri = await captureCard();
+      if (!imageUri) {
+        Alert.alert('Error', 'Failed to capture image');
+        return;
+      }
+
+      const message = `🔥 Check out my fitness progress! 
+
+✨ ${totalAura} Aura Points earned
+💪 ${currentStreak} day streak going strong!
+
+Building momentum with Flex Aura - the AI-powered fitness app! 
+
+Download Flex Aura and start your own glow streak! 
+#FlexAura #GlowUp #FitnessJourney #AuraPoints`;
+
+      // Share with image as the primary content
+      const shareOptions = {
+        title: `${userName}'s Glow Card`,
+        message: message,
+        url: imageUri,
+        type: 'image/jpeg',
+      };
+
+      const result = await Share.share(shareOptions);
+      
+      if (result.action === Share.sharedAction) {
+        await recordShareAndAura('facebook');
+        onClose();
+      } else if (result.action === Share.dismissedAction) {
+        // User cancelled, no need to show error
+        return;
+      }
+    } catch (error) {
+      
+      Alert.alert('Error', 'Failed to share to Facebook');
+    }
   };
 
   const shareToGeneral = async () => {
@@ -209,19 +294,21 @@ Get your Aura on Flex Aura!
         return;
       }
 
-      const message = `🔥 ${getMotivationalMessage()} 
+      const message = `🔥 Check out my fitness progress! 
 
-✨ ${totalAura} Aura Points
-🏆 Best Streak: ${bestStreak} days
-💪 Current Streak: ${currentStreak} days
+✨ ${totalAura} Aura Points earned
+💪 ${currentStreak} day streak going strong!
 
-Get your Aura on Flex Aura! 
+Building momentum with Flex Aura - the AI-powered fitness app that tracks your glow journey! 
+
+Download Flex Aura and start your own glow streak! 
 #FlexAura #GlowUp #FitnessJourney #AuraPoints`;
 
       const shareOptions = {
         title: `${userName}'s Glow Card`,
-        message: `${message}\n\n${imageUri}`,
+        message: message,
         url: imageUri,
+        type: 'image/jpeg',
       };
 
       const result = await Share.share(shareOptions);
@@ -234,8 +321,57 @@ Get your Aura on Flex Aura!
         return;
       }
     } catch (error: any) {
-      console.error('Error sharing:', error);
+      
       Alert.alert('Error', 'Failed to share');
+    }
+  };
+
+  const downloadCard = async () => {
+    try {
+      const imageUri = await captureCard();
+      if (!imageUri) {
+        Alert.alert('Error', 'Failed to capture image');
+        return;
+      }
+
+      // Check if we're in Expo Go (which has limited media library access)
+      const isExpoGo = __DEV__ && !(global as any).Expo?.expoVersion;
+      
+      if (isExpoGo) {
+        Alert.alert(
+          'Development Build Required',
+          'To save images to your gallery, please create a development build. For now, you can share the image directly using the social media buttons.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Request permission to save to media library
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Required', 
+          'Please allow access to save the image to your gallery, or use the social media buttons to share directly.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Save the image to the media library
+      await MediaLibrary.saveToLibraryAsync(imageUri);
+      
+      Alert.alert(
+        'Success!', 
+        'Your Glow Card has been saved to your gallery! You can now share it anywhere you want.',
+        [{ text: 'OK', onPress: () => onClose() }]
+      );
+    } catch (error) {
+      
+      Alert.alert(
+        'Save Failed', 
+        'Failed to save image to gallery. You can still share using the social media buttons.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -244,20 +380,33 @@ Get your Aura on Flex Aura!
     label, 
     onPress, 
     color,
-    iconType = 'emoji'
+    iconType = 'emoji',
+    imageSource
   }: { 
-    icon: string; 
+    icon?: string; 
     label: string; 
     onPress: () => void; 
     color: string;
-    iconType?: 'emoji' | 'text';
+    iconType?: 'emoji' | 'text' | 'image';
+    imageSource?: any;
   }) => (
     <TouchableOpacity style={styles.socialButton} onPress={onPress}>
-      <View style={[styles.socialIcon, { backgroundColor: color }]}>
-        <Text style={[
-          styles.socialIconText,
-          iconType === 'text' && styles.socialIconTextX
-        ]}>{icon}</Text>
+      <View style={[
+        styles.socialIcon, 
+        iconType !== 'image' && { backgroundColor: color }
+      ]}>
+        {iconType === 'image' && imageSource ? (
+          <Image 
+            source={imageSource} 
+            style={styles.socialIconImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <Text style={[
+            styles.socialIconText,
+            iconType === 'text' && styles.socialIconTextX
+          ]}>{icon}</Text>
+        )}
       </View>
       <Text style={styles.socialLabel}>{label}</Text>
     </TouchableOpacity>
@@ -288,73 +437,49 @@ Get your Aura on Flex Aura!
               style={styles.cardContainer}
             >
               <View style={styles.previewCard}>
-                {/* Background with Professional Gradient */}
+                {/* Background with Soft Pastel Gradient */}
                 <LinearGradient
-                  colors={['#667eea', '#764ba2', '#f093fb']}
+                  colors={['#C7F3FF', '#E8F6EF']}
                   style={styles.cardGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                 >
-                  {/* Decorative Elements */}
-                  <View style={styles.cardDecorations}>
-                    <View style={styles.decorationCircle1} />
-                    <View style={styles.decorationCircle2} />
-                    <View style={styles.decorationCircle3} />
-                  </View>
+                  {/* Faint Lavender Overlay */}
+                  <View style={styles.lavenderOverlay} />
 
                   {/* Header Section */}
                   <View style={styles.cardHeader}>
-                    <View style={styles.cardLogoSection}>
-                      <Image
-                        source={require('../assets/mascot/flex_aura_logo_no_bg.png')}
-                        style={styles.cardLogo}
-                        resizeMode="contain"
-                      />
-                      <View style={styles.cardBrandText}>
-                        <Text style={styles.cardAppName}>Flex Aura</Text>
-                        <Text style={styles.cardTagline}>Fitness Revolution</Text>
-                      </View>
-                    </View>
+                    <Text style={styles.cardTitle}>Flex Aura</Text>
+                    <Text style={styles.cardSubtitle}>Share your glow streak</Text>
                   </View>
 
                   {/* Main Stats Section */}
                   <View style={styles.cardStatsSection}>
                     <View style={styles.cardStatRow}>
                       <View style={styles.cardStatItem}>
-                        <Text style={styles.cardStatLabel}>AURA POINTS</Text>
-                        <Text style={[styles.cardStatValue, { color: '#FFD700' }]}>
-                          {totalAura}
-                        </Text>
-                        <Text style={styles.cardStatSubtext}>{auraLevel.level}</Text>
+                        <Text style={styles.cardStatNumber}>{totalAura}</Text>
+                        <Text style={styles.cardStatLabel}>Aura Points</Text>
                       </View>
-                      <View style={styles.cardStatDivider} />
                       <View style={styles.cardStatItem}>
-                        <Text style={styles.cardStatLabel}>STREAK</Text>
-                        <Text style={[styles.cardStatValue, { color: '#FF6B6B' }]}>
-                          {currentStreak}
-                        </Text>
-                        <Text style={styles.cardStatSubtext}>DAYS</Text>
+                        <Text style={styles.cardStatNumber}>{currentStreak}</Text>
+                        <Text style={styles.cardStatLabel}>Streak</Text>
                       </View>
+                    </View>
+                    <View style={styles.advancedBadge}>
+                      <Text style={styles.advancedBadgeText}>{auraLevel.level}</Text>
                     </View>
                   </View>
 
                   {/* Motivational Section */}
                   <View style={styles.cardMotivationalSection}>
-                    <Text style={styles.cardMotivationalText}>
-                      {getMotivationalMessage()}
-                    </Text>
-                    {bestStreak > currentStreak && (
-                      <Text style={styles.cardBestStreakText}>
-                        Best: {bestStreak} days
-                      </Text>
-                    )}
+                    <Text style={styles.cardHeadline}>Building momentum!</Text>
                   </View>
 
                   {/* Footer Section */}
                   <View style={styles.cardFooter}>
                     <View style={styles.cardFooterBrand}>
                       <Image
-                        source={require('../assets/mascot/flex_aura_logo_no_bg.png')}
+                        source={require('../assets/mascot/flex_aura_new_logo_no_bg_2.png')}
                         style={styles.cardFooterLogo}
                         resizeMode="contain"
                       />
@@ -372,47 +497,38 @@ Get your Aura on Flex Aura!
           <View style={styles.socialButtonsContainer}>
             <View style={styles.socialButtonsRow}>
               <SocialButton
-                icon="W"
                 label="WhatsApp"
                 onPress={shareToWhatsApp}
                 color="#25D366"
-                iconType="text"
+                iconType="image"
+                imageSource={require('../assets/logos/whatsapp logo.png')}
               />
               <SocialButton
-                icon="I"
                 label="Instagram"
                 onPress={shareToInstagram}
                 color="#E4405F"
-                iconType="text"
+                iconType="image"
+                imageSource={require('../assets/logos/instagram logo.png')}
               />
               <SocialButton
-                icon="X"
                 label="X"
                 onPress={shareToTwitter}
                 color="#000000"
-                iconType="text"
+                iconType="image"
+                imageSource={require('../assets/logos/x logo.webp')}
               />
-            </View>
-            <View style={styles.socialButtonsRow}>
               <SocialButton
-                icon="F"
                 label="Facebook"
                 onPress={shareToFacebook}
                 color="#1877F2"
-                iconType="text"
+                iconType="image"
+                imageSource={require('../assets/logos/facebook logo.webp')}
               />
               <SocialButton
-                icon="S"
-                label="Snapchat"
-                onPress={shareToGeneral}
-                color="#FFFC00"
-                iconType="text"
-              />
-              <SocialButton
-                icon="+"
-                label="More"
-                onPress={shareToGeneral}
-                color="#6C757D"
+                icon="↓"
+                label="Download"
+                onPress={downloadCard}
+                color="#D8C5FF"
                 iconType="text"
               />
             </View>
@@ -476,168 +592,104 @@ const styles = StyleSheet.create({
     maxWidth: 300,
   },
   previewCard: {
-    borderRadius: 20,
+    borderRadius: 28,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 10,
+      height: 6,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 15,
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 8,
   },
   cardGradient: {
     padding: 24,
     minHeight: 280,
     position: 'relative',
   },
-  cardDecorations: {
+  lavenderOverlay: {
     position: 'absolute',
     top: 0,
-    left: 0,
     right: 0,
-    bottom: 0,
-  },
-  decorationCircle1: {
-    position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    top: -30,
-    right: -30,
-  },
-  decorationCircle2: {
-    position: 'absolute',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    bottom: -20,
-    left: -20,
-  },
-  decorationCircle3: {
-    position: 'absolute',
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    top: '60%',
-    right: 20,
+    width: 100,
+    height: 100,
+    backgroundColor: '#D8C5FF',
+    opacity: 0.3,
+    borderRadius: 50,
+    transform: [{ translateX: 30 }, { translateY: -30 }],
   },
   cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 24,
     zIndex: 1,
   },
-  cardLogoSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  cardLogo: {
-    width: 40,
-    height: 40,
-    marginRight: 12,
-  },
-  cardBrandText: {
-    flex: 1,
-  },
-  cardAppName: {
+  cardTitle: {
     fontSize: 20,
-    fontWeight: '800',
-    color: '#FFFFFF',
+    fontFamily: 'Poppins-Bold',
+    color: '#1B1B1F',
+    textAlign: 'center',
     marginBottom: 2,
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
   },
-  cardTagline: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    opacity: 0.9,
-    fontWeight: '500',
-    letterSpacing: 0.5,
+  cardSubtitle: {
+    fontSize: 14,
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A',
+    textAlign: 'center',
   },
   cardStatsSection: {
+    alignItems: 'center',
     marginBottom: 20,
     zIndex: 1,
   },
   cardStatRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    justifyContent: 'space-around',
+    width: '100%',
   },
   cardStatItem: {
-    flex: 1,
     alignItems: 'center',
+    flex: 1,
+  },
+  cardStatNumber: {
+    fontSize: 28,
+    fontFamily: 'Poppins-Bold',
+    color: '#1B1B1F',
+    marginBottom: 4,
   },
   cardStatLabel: {
-    fontSize: 10,
-    color: '#FFFFFF',
-    opacity: 0.8,
-    marginBottom: 6,
-    fontWeight: '600',
-    letterSpacing: 1.2,
-  },
-  cardStatValue: {
-    fontSize: 32,
-    fontWeight: '800',
-    marginBottom: 4,
-    textShadowColor: 'rgba(0, 0, 0, 0.4)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  cardStatSubtext: {
     fontSize: 12,
-    color: '#FFFFFF',
-    opacity: 0.9,
-    fontWeight: '600',
-    letterSpacing: 0.5,
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A',
   },
-  cardStatDivider: {
-    width: 1,
-    height: 60,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    marginHorizontal: 16,
+  advancedBadge: {
+    backgroundColor: '#FF6F4C',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginTop: 4,
+  },
+  advancedBadgeText: {
+    fontSize: 12,
+    fontFamily: 'Poppins-Regular',
+    color: '#FFFFFF',
   },
   cardMotivationalSection: {
     alignItems: 'center',
     marginBottom: 20,
+    marginTop: 20,
     zIndex: 1,
   },
-  cardMotivationalText: {
+  cardHeadline: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontFamily: 'Poppins-Regular',
+    color: '#1B1B1F',
     textAlign: 'center',
-    textShadowColor: 'rgba(0, 0, 0, 0.4)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-    marginBottom: 8,
-  },
-  cardBestStreakText: {
-    fontSize: 12,
-    color: '#FFFFFF',
-    opacity: 0.8,
-    fontWeight: '500',
-    fontStyle: 'italic',
   },
   cardFooter: {
     alignItems: 'center',
     paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.2)',
     zIndex: 1,
   },
   cardFooterBrand: {
@@ -646,32 +698,27 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   cardFooterLogo: {
-    width: 20,
-    height: 20,
+    width: 32,
+    height: 32,
     marginRight: 8,
   },
   cardFooterText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    fontSize: 16,
+    fontFamily: 'Poppins-Bold',
+    color: '#1B1B1F',
   },
   cardHashtag: {
-    fontSize: 11,
-    color: '#FFFFFF',
-    opacity: 0.8,
-    fontWeight: '500',
-    letterSpacing: 0.5,
+    fontSize: 12,
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A',
+    textAlign: 'center',
   },
   socialButtonsContainer: {
     marginTop: 20,
   },
   socialButtonsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 16,
+    justifyContent: 'space-evenly',
     paddingHorizontal: 8,
   },
   socialButton: {
@@ -680,30 +727,28 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   socialIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 6,
+    overflow: 'hidden',
   },
   socialIconText: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#FFFFFF',
   },
   socialIconTextX: {
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#FFFFFF',
+  },
+  socialIconImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
   socialLabel: {
     fontSize: 11,

@@ -15,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { notificationService, NotificationPreferences } from '../utils/notificationService';
 import Constants from 'expo-constants';
+import { colors } from '../theme';
 
 const { width, height } = Dimensions.get('window');
 
@@ -47,7 +48,7 @@ const NotificationSettingsModal: React.FC<NotificationSettingsModalProps> = ({
       const prefs = await notificationService.loadPreferences(userId);
       setPreferences(prefs);
     } catch (error) {
-      console.error('Failed to load notification preferences:', error);
+      
       Alert.alert('Error', 'Failed to load notification settings');
     } finally {
       setLoading(false);
@@ -62,7 +63,7 @@ const NotificationSettingsModal: React.FC<NotificationSettingsModalProps> = ({
       Alert.alert('Success', 'Notification settings saved successfully!');
       onClose();
     } catch (error) {
-      console.error('Failed to save notification preferences:', error);
+      
       Alert.alert('Error', 'Failed to save notification settings');
     } finally {
       setSaving(false);
@@ -132,11 +133,11 @@ const NotificationSettingsModal: React.FC<NotificationSettingsModalProps> = ({
         <View style={styles.timePicker}>
           <View style={styles.timeSection}>
             <TouchableOpacity style={styles.timeButton} onPress={incrementHour}>
-              <Ionicons name="chevron-up" size={20} color="#B7FCE7" />
+              <Ionicons name="chevron-up" size={20} color={colors.primary} />
             </TouchableOpacity>
             <Text style={styles.timeDisplay}>{displayTime}</Text>
             <TouchableOpacity style={styles.timeButton} onPress={decrementHour}>
-              <Ionicons name="chevron-down" size={20} color="#B7FCE7" />
+              <Ionicons name="chevron-down" size={20} color={colors.primary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -148,10 +149,10 @@ const NotificationSettingsModal: React.FC<NotificationSettingsModalProps> = ({
     return (
       <Modal visible={visible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#B7FCE7" />
-            <Text style={styles.loadingText}>Loading settings...</Text>
-          </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading settings...</Text>
+        </View>
         </View>
       </Modal>
     );
@@ -162,7 +163,7 @@ const NotificationSettingsModal: React.FC<NotificationSettingsModalProps> = ({
       <View style={styles.modalOverlay}>
         <View style={styles.modalContainer}>
           <LinearGradient
-            colors={['#F8EFFF', '#D6F5EC']}
+            colors={['#F7F3EE', '#F6F8FC']}
             style={styles.modalGradient}
           >
             {/* Header */}
@@ -196,8 +197,8 @@ const NotificationSettingsModal: React.FC<NotificationSettingsModalProps> = ({
                   <Switch
                     value={preferences.enabled}
                     onValueChange={(value) => updatePreference('enabled', value)}
-                    trackColor={{ false: '#E5E7EB', true: '#B7FCE7' }}
-                    thumbColor={preferences.enabled ? '#10B981' : '#9CA3AF'}
+                    trackColor={{ false: '#E5E7EB', true: colors.primary }}
+                    thumbColor={preferences.enabled ? colors.surface : '#9CA3AF'}
                   />
                 </View>
               </View>
@@ -218,8 +219,8 @@ const NotificationSettingsModal: React.FC<NotificationSettingsModalProps> = ({
                       <Switch
                         value={preferences.workoutReminders}
                         onValueChange={(value) => updatePreference('workoutReminders', value)}
-                        trackColor={{ false: '#E5E7EB', true: '#B7FCE7' }}
-                        thumbColor={preferences.workoutReminders ? '#10B981' : '#9CA3AF'}
+                        trackColor={{ false: '#E5E7EB', true: colors.primary }}
+                        thumbColor={preferences.workoutReminders ? colors.surface : '#9CA3AF'}
                       />
                     </View>
 
@@ -246,8 +247,8 @@ const NotificationSettingsModal: React.FC<NotificationSettingsModalProps> = ({
                       <Switch
                         value={preferences.mealReminders}
                         onValueChange={(value) => updatePreference('mealReminders', value)}
-                        trackColor={{ false: '#E5E7EB', true: '#B7FCE7' }}
-                        thumbColor={preferences.mealReminders ? '#10B981' : '#9CA3AF'}
+                        trackColor={{ false: '#E5E7EB', true: colors.primary }}
+                        thumbColor={preferences.mealReminders ? colors.surface : '#9CA3AF'}
                       />
                     </View>
 
@@ -274,8 +275,8 @@ const NotificationSettingsModal: React.FC<NotificationSettingsModalProps> = ({
                       <Switch
                         value={preferences.streakReminders}
                         onValueChange={(value) => updatePreference('streakReminders', value)}
-                        trackColor={{ false: '#E5E7EB', true: '#B7FCE7' }}
-                        thumbColor={preferences.streakReminders ? '#10B981' : '#9CA3AF'}
+                        trackColor={{ false: '#E5E7EB', true: colors.primary }}
+                        thumbColor={preferences.streakReminders ? colors.surface : '#9CA3AF'}
                       />
                     </View>
 
@@ -302,8 +303,8 @@ const NotificationSettingsModal: React.FC<NotificationSettingsModalProps> = ({
                       <Switch
                         value={preferences.milestoneCelebrations}
                         onValueChange={(value) => updatePreference('milestoneCelebrations', value)}
-                        trackColor={{ false: '#E5E7EB', true: '#B7FCE7' }}
-                        thumbColor={preferences.milestoneCelebrations ? '#10B981' : '#9CA3AF'}
+                        trackColor={{ false: '#E5E7EB', true: colors.primary }}
+                        thumbColor={preferences.milestoneCelebrations ? colors.surface : '#9CA3AF'}
                       />
                     </View>
 
@@ -317,8 +318,8 @@ const NotificationSettingsModal: React.FC<NotificationSettingsModalProps> = ({
                       <Switch
                         value={preferences.coachGlowMessages}
                         onValueChange={(value) => updatePreference('coachGlowMessages', value)}
-                        trackColor={{ false: '#E5E7EB', true: '#B7FCE7' }}
-                        thumbColor={preferences.coachGlowMessages ? '#10B981' : '#9CA3AF'}
+                        trackColor={{ false: '#E5E7EB', true: colors.primary }}
+                        thumbColor={preferences.coachGlowMessages ? colors.surface : '#9CA3AF'}
                       />
                     </View>
                   </View>
@@ -427,10 +428,15 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingVertical: 16,
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(183, 252, 231, 0.1)',
+    backgroundColor: colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(183, 252, 231, 0.3)',
+    borderColor: colors.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   timePickerLabel: {
     fontSize: 14,
@@ -451,11 +457,16 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(183, 252, 231, 0.2)',
+    backgroundColor: colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(183, 252, 231, 0.4)',
+    borderColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   timeDisplay: {
     fontSize: 24,
@@ -490,14 +501,19 @@ const styles = StyleSheet.create({
     color: '#6B7280',
   },
   saveButton: {
-    backgroundColor: '#B7FCE7',
+    backgroundColor: colors.primary,
     borderWidth: 1,
-    borderColor: '#10B981',
+    borderColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
   saveButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1F2937',
+    color: colors.surface,
   },
   loadingContainer: {
     flex: 1,

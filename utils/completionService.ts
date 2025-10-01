@@ -3,6 +3,7 @@
  */
 
 import { supabase } from './supabase';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { 
   handleMealCompletion, 
   handleDailyWorkoutCompletion,
@@ -66,7 +67,6 @@ export async function markMealAsCompleted(
           .maybeSingle();
 
         if (checkError && checkError.code !== 'PGRST116') {
-          console.error('Error checking meal completion:', checkError);
           return;
         }
 
@@ -88,7 +88,6 @@ export async function markMealAsCompleted(
           });
 
         if (error) {
-          console.error('Error marking meal as completed:', error);
           return;
         }
 
@@ -96,16 +95,13 @@ export async function markMealAsCompleted(
         try {
           await handleMealCompletion(userId, mealIndex, 3); // Assuming 3 meals per day
         } catch (auraError) {
-          console.error('Error adding aura points for meal completion:', auraError);
         }
       } catch (error) {
-        console.error('Background meal completion error:', error);
       }
     }, 0);
 
     return { success: true };
   } catch (error) {
-    console.error('Error marking meal as completed:', error);
     return { success: false, error: 'Failed to mark meal as completed' };
   }
 }
@@ -140,7 +136,6 @@ export async function markExerciseAsCompleted(
           .maybeSingle();
 
         if (checkError && checkError.code !== 'PGRST116') {
-          console.error('Error checking exercise completion:', checkError);
           return;
         }
 
@@ -162,25 +157,21 @@ export async function markExerciseAsCompleted(
           });
 
         if (error) {
-          console.error('Error marking exercise as completed:', error);
           return;
         }
 
         // Add Aura points for exercise completion
         try {
-          // This will be handled when all exercises are completed for the day
-          // Individual exercise completion doesn't give aura points
+          const { addAuraPoints, AURA_EVENT_TYPES, AURA_POINTS } = await import('./auraService');
+          await addAuraPoints(userId, AURA_EVENT_TYPES.EXERCISE_COMPLETION, AURA_POINTS.EXERCISE_COMPLETION, `Completed exercise ${exerciseIndex + 1}`, { exercise_index: exerciseIndex });
         } catch (auraError) {
-          console.error('Error with aura system for exercise completion:', auraError);
         }
       } catch (error) {
-        console.error('Background exercise completion error:', error);
       }
     }, 0);
 
     return { success: true };
   } catch (error) {
-    console.error('Error marking exercise as completed:', error);
     return { success: false, error: 'Failed to mark exercise as completed' };
   }
 }
@@ -192,7 +183,8 @@ export async function markAllMealsAsCompleted(
   userId: string,
   planId: string,
   meals: any[],
-  date?: string
+  date?: string,
+  skipAuraUpdates: boolean = false
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const completedDate = date || new Date().toISOString().split('T')[0];
@@ -206,11 +198,10 @@ export async function markAllMealsAsCompleted(
       .eq('is_active', true);
 
     if (fetchError) {
-      console.error('Error fetching existing meal completions:', fetchError);
       return { success: false, error: fetchError.message };
     }
 
-    const completedIndices = new Set(existingCompletions?.map(c => c.meal_index) || []);
+    const completedIndices = new Set(existingCompletions?.map((c: { meal_index: number }) => c.meal_index) || []);
     
     // Only insert completions for meals that aren't already completed
     const newCompletions = meals
@@ -235,24 +226,23 @@ export async function markAllMealsAsCompleted(
       .insert(newCompletions);
 
     if (error) {
-      console.error('Error marking all meals as completed:', error);
       return { success: false, error: error.message };
     }
 
-    // Add Aura points for all meals completion
-    try {
-      // Mark each meal as completed for aura points
-      for (let i = 0; i < meals.length; i++) {
-        await handleMealCompletion(userId, i, meals.length);
+    // Add Aura points for all meals completion - only if not skipped (to avoid double counting)
+    if (!skipAuraUpdates) {
+      try {
+        // Mark each meal as completed for aura points
+        for (let i = 0; i < meals.length; i++) {
+          await handleMealCompletion(userId, i, meals.length);
+        }
+      } catch (auraError) {
+        // Don't fail the meal completion if aura fails
       }
-    } catch (auraError) {
-      console.error('Error adding aura points for all meals completion:', auraError);
-      // Don't fail the meal completion if aura fails
     }
 
     return { success: true };
   } catch (error) {
-    console.error('Error marking all meals as completed:', error);
     return { success: false, error: 'Failed to mark all meals as completed' };
   }
 }
@@ -264,7 +254,8 @@ export async function markAllExercisesAsCompleted(
   userId: string,
   planId: string,
   exercises: any[],
-  date?: string
+  date?: string,
+  skipAuraUpdates: boolean = false
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const completedDate = date || new Date().toISOString().split('T')[0];
@@ -278,11 +269,10 @@ export async function markAllExercisesAsCompleted(
       .eq('is_active', true);
 
     if (fetchError) {
-      console.error('Error fetching existing exercise completions:', fetchError);
       return { success: false, error: fetchError.message };
     }
 
-    const completedIndices = new Set(existingCompletions?.map(c => c.exercise_index) || []);
+    const completedIndices = new Set(existingCompletions?.map((c: { exercise_index: number }) => c.exercise_index) || []);
     
     // Only insert completions for exercises that aren't already completed
     const newCompletions = exercises
@@ -307,23 +297,22 @@ export async function markAllExercisesAsCompleted(
       .insert(newCompletions);
 
     if (error) {
-      console.error('Error marking all exercises as completed:', error);
       return { success: false, error: error.message };
     }
 
-    // Add Aura points for daily workout completion
-    try {
-      await handleDailyWorkoutCompletion(userId);
-      await updateStreak(userId);
-      await checkAchievements(userId);
-    } catch (auraError) {
-      console.error('Error adding aura points for daily workout completion:', auraError);
-      // Don't fail the exercise completion if aura fails
+    // Add Aura points for daily workout completion - only if not skipped (to avoid double counting)
+    if (!skipAuraUpdates) {
+      try {
+        await handleDailyWorkoutCompletion(userId);
+        await updateStreak(userId);
+        await checkAchievements(userId);
+      } catch (auraError) {
+        // Don't fail the exercise completion if aura fails
+      }
     }
 
     return { success: true };
   } catch (error) {
-    console.error('Error marking all exercises as completed:', error);
     return { success: false, error: 'Failed to mark all exercises as completed' };
   }
 }
@@ -347,13 +336,11 @@ export async function getCompletedMeals(
       .order('meal_index');
 
     if (error) {
-      console.error('Error fetching completed meals:', error);
       return { success: false, error: error.message };
     }
 
     return { success: true, data: data || [] };
   } catch (error) {
-    console.error('Error fetching completed meals:', error);
     return { success: false, error: 'Failed to fetch completed meals' };
   }
 }
@@ -377,13 +364,11 @@ export async function getCompletedExercises(
       .order('exercise_index');
 
     if (error) {
-      console.error('Error fetching completed exercises:', error);
       return { success: false, error: error.message };
     }
 
     return { success: true, data: data || [] };
   } catch (error) {
-    console.error('Error fetching completed exercises:', error);
     return { success: false, error: 'Failed to fetch completed exercises' };
   }
 }
@@ -409,13 +394,11 @@ export async function isMealCompleted(
       .maybeSingle();
 
     if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
-      console.error('Error checking meal completion:', error);
       return false;
     }
 
     return !!data;
   } catch (error) {
-    console.error('Error checking meal completion:', error);
     return false;
   }
 }
@@ -441,13 +424,11 @@ export async function isExerciseCompleted(
       .maybeSingle();
 
     if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
-      console.error('Error checking exercise completion:', error);
       return false;
     }
 
     return !!data;
   } catch (error) {
-    console.error('Error checking exercise completion:', error);
     return false;
   }
 }
@@ -477,7 +458,6 @@ export async function getNextUncompletedMeal(
 
     return null; // All meals completed
   } catch (error) {
-    console.error('Error getting next uncompleted meal:', error);
     return meals[0] || null;
   }
 }

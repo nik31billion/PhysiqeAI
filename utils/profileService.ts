@@ -3,6 +3,7 @@ import { supabase } from './supabase';
 export interface UserProfile {
   id: string;
   email: string;
+  display_name: string;
   onboarding_complete: boolean;
   onboarding_step: number;
   
@@ -89,13 +90,13 @@ export const fetchUserProfile = async (userId: string): Promise<UserProfile | nu
       .single();
 
     if (error) {
-      console.error('Error fetching user profile:', error);
+      
       return null;
     }
 
     return data;
   } catch (error) {
-    console.error('Error fetching user profile:', error);
+    
     return null;
   }
 };
@@ -115,13 +116,13 @@ export const fetchUserActivePlan = async (userId: string): Promise<UserPlan | nu
       .single();
 
     if (error) {
-      console.error('Error fetching user plan:', error);
+      
       return null;
     }
 
     return data;
   } catch (error) {
-    console.error('Error fetching user plan:', error);
+    
     return null;
   }
 };
@@ -132,8 +133,12 @@ export const fetchUserActivePlan = async (userId: string): Promise<UserPlan | nu
 export const getUserDisplayName = (profile: UserProfile | null): string => {
   if (!profile) return 'User';
   
-  // If we have a name field in the future, use it
-  // For now, extract name from email or use a default
+  // Prioritize custom display name if set
+  if (profile.display_name && profile.display_name.trim()) {
+    return profile.display_name.trim();
+  }
+  
+  // Fallback to email username if no custom name is set
   if (profile.email) {
     const emailName = profile.email.split('@')[0];
     return emailName.charAt(0).toUpperCase() + emailName.slice(1);
@@ -180,7 +185,7 @@ export const getDietPlanName = (plan: UserPlan | null): string => {
     
     return 'Custom Plan';
   } catch (error) {
-    console.error('Error parsing diet plan:', error);
+    
     return 'Custom Plan';
   }
 };
@@ -241,7 +246,7 @@ export const getDietPlanPills = (plan: UserPlan | null): string[] => {
     
     return pills;
   } catch (error) {
-    console.error('Error parsing diet plan pills:', error);
+    
     return ['🍽️ 3 meals/day'];
   }
 };
@@ -265,13 +270,13 @@ export const updateUserProfile = async (
       .single();
 
     if (error) {
-      console.error('Error updating user profile:', error);
+      
       throw new Error(`Failed to update profile: ${error.message}`);
     }
 
     return data;
   } catch (error) {
-    console.error('Error updating user profile:', error);
+    
     throw error;
   }
 };

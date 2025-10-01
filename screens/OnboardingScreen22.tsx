@@ -15,12 +15,15 @@ import { useNavigation } from '@react-navigation/native';
 import { useOnboardingNavigation } from '../utils/useOnboardingNavigation';
 import { OnboardingErrorHandler } from '../components/OnboardingErrorHandler';
 import { useAuth } from '../utils/AuthContext';
+import { getUserDisplayName } from '../utils/profileService';
+import { useInstantUserProfile } from '../utils/useInstantData';
 
 const { width, height } = Dimensions.get('window');
 
 const OnboardingScreen22: React.FC = () => {
   const navigation = useNavigation();
   const { user } = useAuth();
+  const { profile: userProfile } = useInstantUserProfile(user?.id || null);
   const {
     navigateToNextStep,
     isSaving,
@@ -100,15 +103,15 @@ const OnboardingScreen22: React.FC = () => {
   }, [planGenerationStatus, generationMessages.length]);
 
   const handleGoToDashboard = async () => {
-    console.log('🚀 handleGoToDashboard called - marking onboarding as complete');
+    console.log('Navigating to dashboard...');
+    
     // This is the final screen, so we mark onboarding as complete
-    console.log('📡 Calling navigateToNextStep(22, {})');
     const success = await navigateToNextStep(22, {});
-    console.log('📥 navigateToNextStep(22) result:', success);
+    console.log('Navigation result:', success);
     if (!success) {
-      console.error('❌ Failed to save onboarding data');
+      console.log('Navigation failed');
     } else {
-      console.log('✅ Onboarding completion initiated successfully');
+      console.log('Navigation successful');
     }
   };
 
@@ -138,7 +141,7 @@ const OnboardingScreen22: React.FC = () => {
   };
 
   const getHeadingText = () => {
-    const userName = user?.email?.split('@')[0] || 'there';
+    const userName = getUserDisplayName(userProfile);
 
     switch (planGenerationStatus) {
       case 'generating':
@@ -148,7 +151,7 @@ const OnboardingScreen22: React.FC = () => {
       case 'failed':
         return `Hi ${userName}, let's get you set up!`;
       default:
-        return `Hi ${userName}, welcome to Flex Aura!`;
+        return `to Flex Aura!`;
     }
   };
 
@@ -215,12 +218,13 @@ const OnboardingScreen22: React.FC = () => {
         {/* Heading */}
         <Text style={styles.heading}>
           <Text style={styles.congratsText}>
-            {planGenerationStatus === 'completed' ? 'Congrats' :
+            {planGenerationStatus === 'completed' ? '' :
              planGenerationStatus === 'generating' ? 'Almost there' :
              planGenerationStatus === 'failed' ? 'Let\'s try again' :
              'Welcome'}
-          </Text>{'\n'}
-          {getHeadingText().split(',')[1] || 'to Flex Aura!'}{'\n'}
+          </Text>
+          {planGenerationStatus === 'completed' ? '' : '\n'}
+          {getHeadingText()}{'\n'}
           <Text style={styles.glowingText}>
             {planGenerationStatus === 'completed' ? "Let's get glowing!" :
              planGenerationStatus === 'generating' ? "Your plan is coming..." :

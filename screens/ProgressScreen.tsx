@@ -15,8 +15,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '../utils/AuthContext';
 import { supabase } from '../utils/supabase';
-import { useInstantCompletionStats, useInstantAuraSummary } from '../utils/useInstantData';
+import { useInstantCompletionStats, useInstantAuraSummary, useInstantUserProfile } from '../utils/useInstantData';
 import { useAura } from '../utils/useAura';
+import { getUserDisplayName } from '../utils/profileService';
 import AuraMeter from '../components/AuraMeter';
 import StreakTracker from '../components/StreakTracker';
 import AchievementCard from '../components/AchievementCard';
@@ -24,6 +25,7 @@ import GlowCard from '../components/GlowCard';
 import AuraEarningAnimation from '../components/AuraEarningAnimation';
 import DynamicMascot from '../components/DynamicMascot';
 import SocialShareModal from '../components/SocialShareModal';
+import ProgressComparisonModal from '../components/ProgressComparisonModal';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -62,6 +64,9 @@ const ProgressScreen: React.FC = () => {
   // Use instant aura data for truly instant updates
   const { auraSummary: instantAuraSummary, loading: instantAuraLoading } = useInstantAuraSummary(user?.id || null);
   
+  // Use instant user profile for progress comparison
+  const { profile: userProfile, loading: profileLoading } = useInstantUserProfile(user?.id || null);
+  
   // Use Aura system for achievements and other features
   const { 
     achievements, 
@@ -98,12 +103,18 @@ const ProgressScreen: React.FC = () => {
 
   // Social sharing modal state
   const [showSocialShareModal, setShowSocialShareModal] = useState(false);
+  
+  // Progress comparison modal state
+  const [showProgressComparisonModal, setShowProgressComparisonModal] = useState(false);
 
   // Handler for share button taps
   const handleShare = async (type: string) => {
     if (type === 'Glow Card' || type === 'Glow Streak') {
       // Show the social share modal instead of direct sharing
       setShowSocialShareModal(true);
+    } else if (type === 'Progress Comparison') {
+      // Show the progress comparison modal
+      setShowProgressComparisonModal(true);
     } else {
       Alert.alert('Share Feature', `${type} sharing coming soon!`);
     }
@@ -122,7 +133,7 @@ const ProgressScreen: React.FC = () => {
       }
       // If auraEarned is 0, just close the modal silently (no animation)
     } catch (error) {
-      console.error('Error showing aura animation:', error);
+      
     }
   };
 
@@ -133,27 +144,21 @@ const ProgressScreen: React.FC = () => {
   };
 
   return (
-    <LinearGradient
-      colors={['#e9f7fa', '#f7e8fa']}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <StatusBar style="dark" />
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.mainCard}>
           {/* Header Section */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <DynamicMascot
-                totalAura={totalAura}
-                currentStreak={currentStreak}
-                size="small"
-                showGlow={true}
-                animated={true}
+              <Image 
+                source={require('../assets/mascot/flex_aura_new_logo_no_bg_2.png')} 
+                style={styles.headerLogo}
               />
             </View>
             <View style={styles.headerCenter}>
-              <Text style={styles.headerTitle}>Glow Up History ✨</Text>
-              <Text style={styles.headerSubtitle}>Keep shining, {user?.email?.split('@')[0] || 'Champion'}!</Text>
+              <Text style={styles.headerTitle}>Glow Up History </Text>
+              <Text style={styles.headerSubtitle}>Keep shining, {getUserDisplayName(userProfile)}!</Text>
             </View>
             <View style={styles.headerRight}>
               <TouchableOpacity style={styles.menuButton}>
@@ -206,6 +211,26 @@ const ProgressScreen: React.FC = () => {
             )}
           </View>
 
+          {/* Progress Comparison Card */}
+          <View style={styles.progressComparisonCard}>
+            <Text style={styles.progressComparisonTitle}>Progress Comparison</Text>
+            <Text style={styles.progressComparisonSubtitle}>
+              Track your transformation journey with before/dream/now photos
+            </Text>
+            
+            <TouchableOpacity 
+              style={[styles.progressComparisonButton, { backgroundColor: auraLevel.color }]}
+              onPress={() => handleShare('Progress Comparison')}
+            >
+              <Image 
+                source={require('../assets/mascot/flex_aura_new_logo_no_bg_2.png')} 
+                style={styles.progressComparisonIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.progressComparisonButtonText}>View Progress Comparison</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Weight & Stats Card */}
           <View style={styles.weightStatsCard}>
             <Text style={styles.weightStatsTitle}>Progress & Stats</Text>
@@ -231,7 +256,7 @@ const ProgressScreen: React.FC = () => {
               onPress={() => handleShare('Glow Streak')}
             >
               <Image 
-                source={require('../assets/mascot/mascot normal no bg.png')} 
+                source={require('../assets/mascot/flex_aura_new_logo_no_bg_2.png')} 
                 style={styles.shareStreakIcon}
                 resizeMode="contain"
               />
@@ -256,55 +281,77 @@ const ProgressScreen: React.FC = () => {
         visible={showSocialShareModal}
         onClose={() => setShowSocialShareModal(false)}
         auraSummary={instantAuraSummary}
-        userName={user?.email?.split('@')[0] || 'Champion'}
+        userName={getUserDisplayName(userProfile)}
         userId={user?.id}
         onShareSuccess={handleSocialShareSuccess}
       />
-    </LinearGradient>
+
+      {/* Progress Comparison Modal */}
+      <ProgressComparisonModal
+        visible={showProgressComparisonModal}
+        onClose={() => setShowProgressComparisonModal(false)}
+        userProfile={userProfile}
+        userId={user?.id || ''}
+        onShareSuccess={handleSocialShareSuccess}
+      />
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#F7F3EE',
   },
   scrollView: {
     flex: 1,
   },
   mainCard: {
     backgroundColor: '#FFFFFF',
-    margin: 16,
-    borderRadius: 26,
-    paddingTop: 32,
-    paddingBottom: 32,
+    margin: 20,
+    borderRadius: 28,
+    paddingTop: 24,
+    paddingBottom: 24,
     paddingHorizontal: 20,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 8,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 12,
     marginBottom: 100, // Space for navigation
   },
 
   // Header Section
   header: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 32,
+    alignItems: 'center',
+    marginBottom: 24,
   },
   headerLeft: {
-    width: 50,
+    width: 80,
+  },
+  headerLogo: {
+    width: 80,
+    height: 80,
   },
   mascotContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#f0f0f0',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   mascotImage: {
     width: 24,
@@ -316,14 +363,16 @@ const styles = StyleSheet.create({
     paddingLeft: 8,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 20,
+    fontFamily: 'Poppins-Bold',
     fontWeight: 'bold',
-    color: '#232323',
+    color: '#1B1B1F',
     marginBottom: 4,
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#b99bce',
+    fontFamily: 'Poppins-Regular',
+    color: '#BFA3F9',
   },
   headerRight: {
     width: 50,
@@ -334,7 +383,7 @@ const styles = StyleSheet.create({
   },
   menuDots: {
     fontSize: 20,
-    color: '#888',
+    color: '#A9A9A9',
     transform: [{ rotate: '90deg' }],
   },
 
@@ -420,12 +469,13 @@ const styles = StyleSheet.create({
 
   // Milestones Section
   milestonesSection: {
-    marginBottom: 32,
+    marginBottom: 24,
   },
   milestonesTitle: {
     fontSize: 16,
+    fontFamily: 'Poppins-Bold',
     fontWeight: 'bold',
-    color: '#232323',
+    color: '#1B1B1F',
     marginBottom: 18,
     paddingLeft: 8,
   },
@@ -438,26 +488,27 @@ const styles = StyleSheet.create({
   },
   milestoneCard: {
     width: 140,
+    height: 260, // Increased height to match AchievementCard and prevent overlapping
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 24,
     marginRight: 10,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 8,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
   },
   milestoneCardGreen: {
-    backgroundColor: '#d6fce6',
+    backgroundColor: '#C9F3C5',
   },
   milestoneCardPurple: {
-    backgroundColor: '#ece5fb',
+    backgroundColor: '#D8C5FF',
   },
   milestoneCardYellow: {
-    backgroundColor: '#fff5c8',
+    backgroundColor: '#FFE0D6',
   },
   milestoneIcon: {
     width: 20,
@@ -465,44 +516,48 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   milestoneTitle: {
-    fontSize: 14,
+    fontSize: 16,
+    fontFamily: 'Poppins-Bold',
     fontWeight: 'bold',
-    color: '#232323',
+    color: '#1B1B1F',
     marginBottom: 8,
-    lineHeight: 18,
+    lineHeight: 20,
   },
   milestoneAction: {
     marginTop: 4,
   },
   milestoneActionText: {
     fontSize: 12,
-    color: '#666',
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A',
   },
   milestoneSubtext: {
     fontSize: 12,
-    color: '#666',
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A',
     lineHeight: 16,
   },
 
   // Weight & Stats Card
   weightStatsCard: {
-    backgroundColor: '#e3f5fc',
-    borderRadius: 16,
+    backgroundColor: '#D7F2FB',
+    borderRadius: 24,
     padding: 20,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 8,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
     position: 'relative',
   },
   weightStatsTitle: {
     fontSize: 16,
+    fontFamily: 'Poppins-Bold',
     fontWeight: 'bold',
-    color: '#232323',
+    color: '#1B1B1F',
     marginBottom: 16,
   },
   weightStatsContent: {
@@ -516,55 +571,62 @@ const styles = StyleSheet.create({
   },
   weightChangeLabel: {
     fontSize: 14,
-    color: '#232323',
+    fontFamily: 'Poppins-Regular',
+    color: '#1B1B1F',
     marginBottom: 2,
   },
   weightChangeValue: {
-    fontSize: 20,
+    fontSize: 24,
+    fontFamily: 'Poppins-Bold',
     fontWeight: 'bold',
-    color: '#232323',
+    color: '#1B1B1F',
     marginBottom: 2,
   },
   weightChangeSince: {
     fontSize: 14,
-    color: '#888',
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A',
   },
   bestStreak: {
     fontSize: 14,
-    color: '#888',
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A',
   },
   weeklyProgress: {
     fontSize: 14,
+    fontFamily: 'Poppins-Regular',
     color: '#4CAF50',
     fontWeight: '500',
     marginTop: 4,
   },
   shareStreakButton: {
-    backgroundColor: '#ffbb5b',
-    borderRadius: 20,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    backgroundColor: '#C9F3C5',
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-end',
+    alignSelf: 'stretch',
+    marginTop: 12,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 4,
     },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowRadius: 8,
     elevation: 4,
   },
   shareStreakIcon: {
-    width: 16,
-    height: 16,
-    marginRight: 6,
+    width: 24,
+    height: 24,
+    marginRight: 8,
   },
   shareStreakText: {
     fontSize: 14,
+    fontFamily: 'Poppins-SemiBold',
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: '#1B1B1F',
   },
   
   // New styles for Aura system
@@ -572,14 +634,72 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: 'center',
     backgroundColor: '#F8F9FA',
-    borderRadius: 12,
+    borderRadius: 24,
     marginHorizontal: 8,
   },
   noAchievementsText: {
     fontSize: 14,
-    color: '#6C757D',
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A',
     textAlign: 'center',
     fontStyle: 'italic',
+  },
+
+  // Progress Comparison Card
+  progressComparisonCard: {
+    backgroundColor: '#FFF0F5',
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  progressComparisonTitle: {
+    fontSize: 16,
+    fontFamily: 'Poppins-Bold',
+    fontWeight: 'bold',
+    color: '#1B1B1F',
+    marginBottom: 8,
+  },
+  progressComparisonSubtitle: {
+    fontSize: 14,
+    fontFamily: 'Poppins-Regular',
+    color: '#6A6A6A',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  progressComparisonButton: {
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  progressComparisonIcon: {
+    width: 24,
+    height: 24,
+    marginRight: 8,
+  },
+  progressComparisonButtonText: {
+    fontSize: 14,
+    fontFamily: 'Poppins-SemiBold',
+    fontWeight: '600',
+    color: '#1B1B1F',
   },
 });
 

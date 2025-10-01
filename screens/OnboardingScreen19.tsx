@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { useOnboardingNavigation } from '../utils/useOnboardingNavigation';
 import { useOnboarding } from '../utils/OnboardingContext';
+import { usePlanGeneration } from '../utils/PlanGenerationContext';
 import { OnboardingErrorHandler } from '../components/OnboardingErrorHandler';
 
 const { width, height } = Dimensions.get('window');
@@ -50,14 +51,13 @@ const getCharacterImageSource = (characterId: string) => {
 
 const OnboardingScreen19: React.FC = () => {
   const navigation = useNavigation();
-  const { navigateToNextStep, isSaving, error, generatePlanForUser } = useOnboardingNavigation();
+  const { navigateToNextStep, isSaving, error } = useOnboardingNavigation();
   const { userProfile } = useOnboarding();
+  const { startPlanGeneration } = usePlanGeneration();
   
   
   // Animation values
   const glowAnimation = useRef(new Animated.Value(0)).current;
-  const progressAnimation = useRef(new Animated.Value(0)).current;
-  const shimmerAnimation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     // Continuous glow animation
@@ -77,63 +77,22 @@ const OnboardingScreen19: React.FC = () => {
     );
     glowLoop.start();
 
-
-    // Progress bar animation
-    Animated.timing(progressAnimation, {
-      toValue: 1,
-      duration: 3000,
-      useNativeDriver: false,
-    }).start();
-
-    // Shimmer animation for progress bar
-    const shimmerLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(shimmerAnimation, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: false,
-        }),
-        Animated.timing(shimmerAnimation, {
-          toValue: 0,
-          duration: 2000,
-          useNativeDriver: false,
-        }),
-      ])
-    );
-    shimmerLoop.start();
-
     return () => {
       glowLoop.stop();
-      shimmerLoop.stop();
     };
   }, []);
 
   const handleContinue = async () => {
-    // Start plan generation immediately when user continues from physique comparison
-    console.log('🚀 Starting plan generation from OnboardingScreen19');
-    generatePlanForUser();
-    
-    // This is a preview screen, so we just need to update the step
+    // Navigate to next step - plan generation should already be started from screen 17
     const success = await navigateToNextStep(19, {});
     if (!success) {
-      console.error('Failed to save onboarding data');
+      console.error('Failed to navigate to next step');
     }
   };
 
   const glowOpacity = glowAnimation.interpolate({
     inputRange: [0, 1],
     outputRange: [0.3, 0.8],
-  });
-
-
-  const progressWidth = progressAnimation.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, width * 0.7],
-  });
-
-  const shimmerTranslateX = shimmerAnimation.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-width * 0.7, width * 0.7],
   });
 
   return (
@@ -277,10 +236,6 @@ const OnboardingScreen19: React.FC = () => {
                           <View style={styles.dreamSilhouetteHead} />
                           <View style={styles.dreamSilhouetteBody} />
                         </View>
-                        {/* Glow Up Loading overlay */}
-                        <View style={styles.loadingOverlay}>
-                          <Text style={styles.loadingText}>Glow Up Loading...</Text>
-                        </View>
                       </View>
                     </View>
                   );
@@ -297,10 +252,6 @@ const OnboardingScreen19: React.FC = () => {
                       <View style={styles.dreamSilhouetteHead} />
                       <View style={styles.dreamSilhouetteBody} />
                     </View>
-                    {/* Glow Up Loading overlay */}
-                    <View style={styles.loadingOverlay}>
-                      <Text style={styles.loadingText}>Glow Up Loading...</Text>
-                    </View>
                   </View>
                 </View>
               )}
@@ -310,38 +261,6 @@ const OnboardingScreen19: React.FC = () => {
           </View>
         </View>
 
-        {/* Glow Up Progress Bar */}
-        <View style={styles.progressContainer}>
-          <Text style={styles.progressLabel}>Glow Up Loading...</Text>
-          <View style={styles.progressBarContainer}>
-            <View style={styles.progressBarTrack}>
-              <Animated.View 
-                style={[
-                  styles.progressBarFill,
-                  {
-                    width: progressWidth,
-                  }
-                ]}
-              >
-                <LinearGradient
-                  colors={['#FFF4C7', '#E5D5FB', '#B7FCE7']}
-                  style={styles.progressGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                />
-                {/* Shimmer effect */}
-                <Animated.View 
-                  style={[
-                    styles.shimmer,
-                    {
-                      transform: [{ translateX: shimmerTranslateX }]
-                    }
-                  ]}
-                />
-              </Animated.View>
-            </View>
-          </View>
-        </View>
 
 
         {/* Motivational Text */}
@@ -560,22 +479,6 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     backgroundColor: 'rgba(255, 255, 255, 0.4)',
   },
-  loadingOverlay: {
-    position: 'absolute',
-    bottom: -10,
-    left: -10,
-    right: -10,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 15,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-  },
-  loadingText: {
-    fontSize: 10,
-    color: '#666',
-    textAlign: 'center',
-    fontWeight: '600',
-  },
   cardLabel: {
     position: 'absolute',
     bottom: 15,
@@ -586,52 +489,6 @@ const styles = StyleSheet.create({
     color: '#1a1a1a',
     textAlign: 'center',
     fontFamily: 'System',
-  },
-  progressContainer: {
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: 25,
-    marginTop: 10,
-  },
-  progressLabel: {
-    fontSize: 16,
-    color: '#1a1a1a',
-    fontWeight: '600',
-    marginBottom: 15,
-    fontFamily: 'System',
-  },
-  progressBarContainer: {
-    width: width * 0.75,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    overflow: 'hidden',
-  },
-  progressBarTrack: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 10,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  progressGradient: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 10,
-  },
-  shimmer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 10,
   },
   motivationalText: {
     fontSize: 16,

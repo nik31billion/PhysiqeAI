@@ -154,9 +154,9 @@ export class OnboardingService {
    * Mark onboarding as complete
    */
   static async completeOnboarding(userId: string): Promise<{ data: UserProfile | null; error: any }> {
-    console.log('🏁 OnboardingService.completeOnboarding called for userId:', userId);
+    
     try {
-      console.log('📝 Updating user profile with onboarding_complete: true');
+      
       const { data, error } = await supabase
         .from('user_profiles')
         .update({
@@ -168,7 +168,7 @@ export class OnboardingService {
         .select()
         .single();
 
-      console.log('📊 completeOnboarding database response:', { data, error });
+      
       
       // Invalidate cache after successful onboarding completion
       if (!error && data) {
@@ -177,7 +177,7 @@ export class OnboardingService {
       
       return { data, error };
     } catch (error) {
-      console.error('💥 OnboardingService.completeOnboarding error:', error);
+      
       return { data: null, error };
     }
   }

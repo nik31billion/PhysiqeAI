@@ -99,7 +99,7 @@ const SignUpScreen: React.FC = () => {
           {/* Logo Container */}
           <View style={styles.logoContainer}>
             <Image
-              source={require('../assets/mascot/flex_aura_logo_no_bg.png')}
+              source={require('../assets/mascot/flex_aura_new_logo_no_bg_2.png')}
               style={styles.logoImage}
               resizeMode="contain"
             />
