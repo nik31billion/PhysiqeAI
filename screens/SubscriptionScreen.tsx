@@ -36,7 +36,9 @@ const SubscriptionScreen: React.FC = () => {
 
   useEffect(() => {
     if (customerInfo) {
+      console.log('🔍 SubscriptionScreen - customerInfo:', JSON.stringify(customerInfo, null, 2));
       const info = extractSubscriptionInfo(customerInfo);
+      console.log('🔍 SubscriptionScreen - extracted info:', JSON.stringify(info, null, 2));
       setSubscriptionInfo(info);
     }
   }, [customerInfo]);
@@ -211,12 +213,10 @@ const SubscriptionScreen: React.FC = () => {
                       <Text style={styles.detailValue}>{subscriptionInfo.title}</Text>
                     </View>
                     
-                    {subscriptionInfo.billingPeriod && (
-                      <View style={styles.detailRow}>
-                        <Text style={styles.detailLabel}>Billing</Text>
-                        <Text style={styles.detailValue}>{subscriptionInfo.billingPeriod}</Text>
-                      </View>
-                    )}
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Billing</Text>
+                      <Text style={styles.detailValue}>{subscriptionInfo.billingPeriod || 'Unknown'}</Text>
+                    </View>
                     
                     {subscriptionInfo.purchaseDate && (
                       <View style={styles.detailRow}>
@@ -242,15 +242,26 @@ const SubscriptionScreen: React.FC = () => {
                       <Text style={styles.detailLabel}>Auto-Renewal</Text>
                       <View style={styles.renewalStatus}>
                         <Ionicons 
-                          name={subscriptionInfo.willRenew ? "checkmark-circle" : "close-circle"} 
+                          name={subscriptionInfo.isPrepaidSubscription 
+                            ? "calendar-outline" 
+                            : subscriptionInfo.willRenew ? "checkmark-circle" : "close-circle"
+                          } 
                           size={16} 
-                          color={subscriptionInfo.willRenew ? "#10B981" : "#EF4444"} 
+                          color={subscriptionInfo.isPrepaidSubscription 
+                            ? "#6B7280" 
+                            : subscriptionInfo.willRenew ? "#10B981" : "#EF4444"
+                          } 
                         />
                         <Text style={[styles.detailValue, { 
-                          color: subscriptionInfo.willRenew ? "#10B981" : "#EF4444",
+                          color: subscriptionInfo.isPrepaidSubscription 
+                            ? "#6B7280"
+                            : subscriptionInfo.willRenew ? "#10B981" : "#EF4444",
                           marginLeft: 4 
                         }]}>
-                          {subscriptionInfo.willRenew ? 'Enabled' : 'Disabled'}
+                          {subscriptionInfo.isPrepaidSubscription 
+                            ? 'Not Applicable (Prepaid)' 
+                            : subscriptionInfo.willRenew ? 'Enabled' : 'Disabled'
+                          }
                         </Text>
                       </View>
                     </View>

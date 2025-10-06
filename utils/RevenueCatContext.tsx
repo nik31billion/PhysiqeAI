@@ -35,10 +35,10 @@ export const RevenueCatProvider: React.FC<RevenueCatProviderProps> = ({ children
         
         // Select API key based on platform
         const apiKey = Platform.OS === 'ios' 
-          ? 'appl_mbYWUpNYylmuxaUoskkidLitIre'  // Replace with your actual iOS API key from Revenue Cat
+          ? 'appl_mbYWUpNYylmuxaUoskkidLitIre'  // TODO: Replace with your actual iOS API key from RevenueCat Dashboard
           : 'goog_GbSInxtARSeejPPTFnWzfQaGuIr';  // Your existing Android API key
         
-        console.log(`🚀 Initializing RevenueCat for platform: ${Platform.OS}`);
+        console.log(`🚀 Initializing RevenueCat for platform: ${Platform.OS} with API key: ${apiKey.substring(0, 10)}...`);
         
         // Configure with timeout
         const configurePromise = Purchases.configure({
@@ -123,7 +123,7 @@ export const RevenueCatProvider: React.FC<RevenueCatProviderProps> = ({ children
     return () => clearTimeout(timeoutId);
   }, [user, loading]);
 
-  // Fetch offerings
+  // Fetch offerings with enhanced iOS debugging
   const fetchOfferings = async () => {
     if (loading) {
       console.log('RevenueCat not initialized yet, cannot fetch offerings');
@@ -131,11 +131,36 @@ export const RevenueCatProvider: React.FC<RevenueCatProviderProps> = ({ children
     }
 
     try {
+      console.log(`📱 Fetching offerings for platform: ${Platform.OS}`);
       const offerings = await Purchases.getOfferings();
       setOfferings(offerings);
-      console.log('Fetched RevenueCat offerings:', offerings);
-    } catch (error) {
-      console.error('Error fetching offerings:', error);
+      console.log('✅ Fetched RevenueCat offerings:', {
+        current: offerings?.current ? 'exists' : 'null',
+        all: offerings?.all ? Object.keys(offerings.all) : 'none',
+        availablePackages: offerings?.current?.availablePackages?.length || 0,
+        monthly: offerings?.current?.monthly ? 'exists' : 'null',
+        annual: offerings?.current?.annual ? 'exists' : 'null',
+        platform: Platform.OS
+      });
+      
+      // Additional iOS-specific debugging
+      if (Platform.OS === 'ios') {
+        console.log('🍎 iOS Offerings Debug:', {
+          currentOffering: offerings?.current?.identifier,
+          packages: offerings?.current?.availablePackages?.map((pkg: any) => ({
+            identifier: pkg.identifier,
+            product: pkg.product?.identifier,
+            price: pkg.product?.priceString
+          }))
+        });
+      }
+    } catch (error: any) {
+      console.error(`❌ Error fetching offerings on ${Platform.OS}:`, {
+        message: error.message,
+        code: error.code,
+        underlyingErrorMessage: error.underlyingErrorMessage,
+        platform: Platform.OS
+      });
       throw error;
     }
   };

@@ -18,6 +18,7 @@ import { useAuth } from '../utils/AuthContext';
 import { fetchUserProfile, getUserDisplayName } from '../utils/profileService';
 import { getUserActivePlan, WorkoutPlan, DietPlan } from '../utils/planService';
 import { useInstantUserProfile, useInstantUserPlan } from '../utils/useInstantData';
+import { subscribeToMealCompletion } from '../utils/instantDataManager';
 import { getNextUncompletedMeal } from '../utils/completionService';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useNotificationTriggers } from '../utils/useNotificationTriggers';
@@ -366,6 +367,29 @@ const HomeScreen: React.FC = () => {
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription?.remove();
   }, [user, userPlan, currentDateString]);
+
+  // Subscribe to meal completion events for instant calorie updates
+  useEffect(() => {
+    if (!user?.id || !userPlan) return;
+
+    const unsubscribe = subscribeToMealCompletion(() => {
+      // Immediately recalculate calories when meal is completed
+      calculateConsumedCalories().then(consumed => {
+        setConsumedCalories(consumed);
+        setHasLoggedMealToday(consumed > 0);
+        // Also refresh next meal data
+        getNextUncompletedMealForToday().then(nextMeal => {
+          setNextUncompletedMeal(nextMeal);
+        }).catch(() => {
+          // Silently handle errors
+        });
+      }).catch(() => {
+        // Silently handle errors
+      });
+    });
+
+    return unsubscribe;
+  }, [user?.id, userPlan]);
 
   // Refresh meal data when HomeScreen comes into focus
   useFocusEffect(

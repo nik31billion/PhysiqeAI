@@ -115,6 +115,45 @@ export class GeminiVisionService {
     }
   }
 
+  /**
+   * Concurrent version of food analysis - processes multiple requests simultaneously
+   * @param imageUri - Image URI to analyze
+   * @param scanMode - Scan mode (food, barcode, label)
+   * @returns Promise resolving to food items
+   */
+  public async analyzeFoodConcurrently(
+    imageUri: string,
+    scanMode: 'food' | 'barcode' | 'label'
+  ): Promise<FoodItem[]> {
+    try {
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        throw new Error('User not authenticated');
+      }
+
+      // Convert image to base64
+      const base64Image = await this.imageToBase64(imageUri);
+      
+      const { concurrentLLMProcessor } = await import('./concurrentLLMProcessor');
+      
+      console.log(`[GeminiVisionService] Adding food analysis request to concurrent processor for user ${user.id}`);
+      
+      return await concurrentLLMProcessor.addRequest(
+        user.id,
+        'food_analysis',
+        {
+          userId: user.id,
+          imageBase64: base64Image,
+          scanMode: scanMode,
+        }
+      );
+    } catch (error) {
+      console.error('Error in analyzeFoodConcurrently:', error);
+      throw error;
+    }
+  }
+
   private getMockFoodData(scanMode: 'food' | 'barcode' | 'label'): FoodItem[] {
     // Mock data for development and testing
     const mockData: { [key: string]: FoodItem[] } = {

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
-import { generatePlanViaEdgeFunction, canGeneratePlan } from './planService';
+import { generatePlanConcurrently, canGeneratePlan } from './planService';
 
 interface PlanGenerationContextType {
   isGeneratingPlan: boolean;
@@ -50,8 +50,8 @@ export const PlanGenerationProvider: React.FC<{ children: React.ReactNode }> = (
     setPlanGenerationStartTime(Date.now());
 
     try {
-      console.log('Calling plan generation edge function');
-      const response = await generatePlanViaEdgeFunction({
+      console.log('Calling concurrent plan generation');
+      const response = await generatePlanConcurrently({
         userId,
         regenerate: false
       });

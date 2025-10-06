@@ -18,7 +18,15 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Flex Aura uses the camera to scan food items and analyze their nutritional content for accurate calorie tracking and meal planning."
       },
-      "buildNumber": "4"
+      "buildNumber": "4",
+      "entitlements": {
+        "com.apple.developer.in-app-payments": [
+          "merchant.com.applotictech.flexaura"
+        ]
+      },
+      "associatedDomains": [
+        "applinks:flexaura.app.link"
+      ]
     },
     "android": {
       "package": "com.applotictech.flexaura",

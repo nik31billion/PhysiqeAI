@@ -1,4 +1,4 @@
-import { CustomerInfo, EntitlementInfo } from 'react-native-purchases';
+import { CustomerInfo } from 'react-native-purchases';
 
 export interface SubscriptionInfo {
   productId: string;
@@ -11,6 +11,7 @@ export interface SubscriptionInfo {
   trialEndDate: Date | null;
   price?: string;
   billingPeriod?: string;
+  isPrepaidSubscription?: boolean;
 }
 
 /**
@@ -27,18 +28,38 @@ export const extractSubscriptionInfo = (customerInfo: CustomerInfo | null): Subs
   
   if (!mainEntitlement) return null;
 
+  const productId = mainEntitlement.productIdentifier;
+  const productPlanId = mainEntitlement.productPlanIdentifier || productId;
+  
+  console.log('🔍 extractSubscriptionInfo - productId:', productId);
+  console.log('🔍 extractSubscriptionInfo - productPlanId:', productPlanId);
+  console.log('🔍 extractSubscriptionInfo - mainEntitlement:', JSON.stringify(mainEntitlement, null, 2));
+  
+  // Check both productIdentifier and productPlanIdentifier for yearly/annual
+  const isPrepaidSubscription = productId.toLowerCase().includes('yearly') || productId.toLowerCase().includes('annual') ||
+                               productPlanId.toLowerCase().includes('yearly') || productPlanId.toLowerCase().includes('annual');
+  
+  // For billing period, we need to use the full product identifier that includes the plan
+  // The productPlanId alone (like "default") doesn't contain the billing period info
+  const fullProductId = `${productId}:${productPlanId}`;
+  console.log('🔍 Using full product ID for billing period:', fullProductId);
+  
+  const billingPeriod = getBillingPeriod(fullProductId);
+  console.log('🔍 Final billingPeriod result:', billingPeriod);
+  
   return {
-    productId: mainEntitlement.productIdentifier,
-    title: getSubscriptionTitle(mainEntitlement.productIdentifier),
+    productId: productId,
+    title: getSubscriptionTitle(productPlanId), // Use productPlanId for title
     status: getSubscriptionStatus(mainEntitlement),
     renewalDate: mainEntitlement.expirationDate ? new Date(mainEntitlement.expirationDate) : null,
     purchaseDate: mainEntitlement.latestPurchaseDate ? new Date(mainEntitlement.latestPurchaseDate) : null,
-    willRenew: mainEntitlement.willRenew,
+    willRenew: isPrepaidSubscription ? false : mainEntitlement.willRenew, // Prepaid subscriptions don't auto-renew
     isTrialPeriod: mainEntitlement.periodType === 'TRIAL',
     trialEndDate: mainEntitlement.isActive && mainEntitlement.periodType === 'TRIAL' 
       ? mainEntitlement.expirationDate ? new Date(mainEntitlement.expirationDate) : null
       : null,
-    billingPeriod: getBillingPeriod(mainEntitlement.productIdentifier),
+    billingPeriod: billingPeriod, // Use full product ID for billing period
+    isPrepaidSubscription: isPrepaidSubscription,
   };
 };
 
@@ -49,10 +70,18 @@ export const getSubscriptionTitle = (productId: string): string => {
   const lowercaseId = productId.toLowerCase();
   
   // Check for yearly FIRST (before monthly) to avoid false matches
+  // Handle cases like "flexaura_monthly:flexaura-yearly" where yearly is at the end
   if (lowercaseId.includes('yearly') || lowercaseId.includes('annual')) {
     return 'Flex Aura Pro (Yearly)';
   }
-  if (lowercaseId.includes('monthly')) {
+  // Check for monthly - either in the full ID or in the base product part (before colon)
+  // Handle cases like "flexaura_monthly:default" where monthly is in the base product
+  if (lowercaseId.includes('monthly') && !lowercaseId.includes('yearly')) {
+    return 'Flex Aura Pro (Monthly)';
+  }
+  // Also check if the base product (before colon) contains monthly
+  const baseProduct = lowercaseId.split(':')[0];
+  if (baseProduct.includes('monthly') && !lowercaseId.includes('yearly')) {
     return 'Flex Aura Pro (Monthly)';
   }
   if (lowercaseId.includes('weekly')) {
@@ -71,25 +100,56 @@ export const getSubscriptionTitle = (productId: string): string => {
 export const getBillingPeriod = (productId: string): string => {
   const lowercaseId = productId.toLowerCase();
   
+  console.log('🔍 getBillingPeriod called with productId:', productId);
+  console.log('🔍 lowercaseId:', lowercaseId);
+  
   // Check for yearly FIRST (before monthly) to avoid false matches
   // Some product IDs might be like "flexaura_monthly:flexaura-yearly"
   if (lowercaseId.includes('yearly') || lowercaseId.includes('annual')) {
+    console.log('✅ Found yearly/annual, returning Annual');
     return 'Annual';
   }
-  if (lowercaseId.includes('monthly')) {
+  
+  // Check for monthly - either in the full ID or in the base product part (before colon)
+  // Handle cases like "flexaura_monthly:default" where monthly is in the base product
+  if (lowercaseId.includes('monthly') && !lowercaseId.includes('yearly')) {
+    console.log('✅ Found monthly in full ID, returning Monthly');
     return 'Monthly';
   }
+  
+  // Also check if the base product (before colon) contains monthly
+  const baseProduct = lowercaseId.split(':')[0];
+  console.log('🔍 baseProduct:', baseProduct);
+  if (baseProduct.includes('monthly') && !lowercaseId.includes('yearly')) {
+    console.log('✅ Found monthly in base product, returning Monthly');
+    return 'Monthly';
+  }
+  
+  // Check for weekly
   if (lowercaseId.includes('weekly')) {
+    console.log('✅ Found weekly, returning Weekly');
     return 'Weekly';
   }
   
+  // If we can't determine the billing period, try to infer from common patterns
+  // This is a fallback for cases where the product ID doesn't contain clear indicators
+  console.log('🔍 No clear billing period found, checking for common patterns...');
+  
+  // If it's a subscription but we can't determine the period, default to Monthly
+  // This handles cases where the product ID might be something like "premium" or "pro"
+  if (lowercaseId.includes('premium') || lowercaseId.includes('pro') || lowercaseId.includes('subscription')) {
+    console.log('✅ Found premium/pro/subscription, defaulting to Monthly');
+    return 'Monthly';
+  }
+  
+  console.log('❌ No match found, returning Unknown');
   return 'Unknown';
 };
 
 /**
  * Determine subscription status from entitlement
  */
-export const getSubscriptionStatus = (entitlement: EntitlementInfo): 'active' | 'expired' | 'cancelled' | 'trial' | 'unknown' => {
+export const getSubscriptionStatus = (entitlement: any): 'active' | 'expired' | 'cancelled' | 'trial' | 'unknown' => {
   if (!entitlement.isActive) {
     if (entitlement.expirationDate && new Date(entitlement.expirationDate) < new Date()) {
       return 'expired';

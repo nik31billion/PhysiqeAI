@@ -119,6 +119,22 @@ interface RequestBody {
   planType?: 'workout' | 'diet' | 'both' // Which plan to regenerate
 }
 
+interface RegenerationLimit {
+  id: string;
+  user_id: string;
+  plan_type: 'workout' | 'diet' | 'both';
+  last_regenerated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface RateLimitResult {
+  canRegenerate: boolean;
+  nextAvailableAt?: Date;
+  hoursRemaining?: number;
+  message?: string;
+}
+
 /**
  * Creates the Gemini prompt with user data inserted
  */
@@ -600,13 +616,47 @@ function validateJsonStructure(jsonText: string): JsonStructureValidation {
 }
 
 /**
- * Attempts to repair malformed JSON by fixing common issues
+ * Enhanced JSON repair function with robust error handling
  */
 function repairJson(jsonText: string): string {
-  console.log('Repairing JSON...');
+  console.log('Repairing JSON with enhanced logic...');
   let repaired = jsonText;
   
-  // Enhanced JSON repair patterns
+  // Step 1: Remove error markers and problematic content
+  console.log('Step 1: Removing error markers...');
+  repaired = repaired
+    .replace(/\[ERROR\]/g, '')  // Remove [ERROR] markers
+    .replace(/\[WARNING\]/g, '')  // Remove [WARNING] markers
+    .replace(/\[INFO\]/g, '')  // Remove [INFO] markers
+    .replace(/error:/gi, '')  // Remove error: prefixes
+    .replace(/warning:/gi, '')  // Remove warning: prefixes
+    .replace(/info:/gi, '');  // Remove info: prefixes
+
+  // Step 2: Fix double-quoted string values (the main issue you're seeing)
+  console.log('Step 2: Fixing double-quoted string values...');
+  repaired = repaired
+    // Fix the specific pattern: "day": ""Monday"" -> "day": "Monday"
+    .replace(/:\s*""([^"]*?)""/g, ': "$1"')
+    // Fix other double-quoted patterns
+    .replace(/:\s*""([^"]*?)""/g, ': "$1"')
+    // Fix triple quotes
+    .replace(/:\s*"""([^"]*?)"""/g, ': "$1"')
+    // Fix mixed quote patterns
+    .replace(/:\s*"([^"]*?)""/g, ': "$1"')
+    .replace(/:\s*""([^"]*?)"/g, ': "$1"');
+
+  // Step 3: Fix malformed property values
+  console.log('Step 3: Fixing malformed property values...');
+  repaired = repaired
+    // Fix patterns like: "type": ""Push A"" -> "type": "Push A"
+    .replace(/:\s*"([^"]*)"([^",}\]]*)"([^"]*)"\s*([,}])/g, ': "$1$2$3"$4')
+    // Fix unquoted string values that should be quoted
+    .replace(/:\s*([a-zA-Z][a-zA-Z0-9\s-]*[a-zA-Z0-9])(\s*[,}])/g, ':"$1"$2')
+    // Fix numeric values that got quoted
+    .replace(/:\s*"(\d+(?:\.\d+)?)"(\s*[,}])/g, ':$1$2');
+
+  // Step 4: Enhanced JSON repair patterns
+  console.log('Step 4: Applying enhanced repair patterns...');
   const repairPatterns = [
     // Fix unquoted AMRAP and similar values
     { pattern: /\"reps\":\s*as many as possible\s*\(AMRAP\)/g, replacement: '"reps": "as many as possible (AMRAP)"' },
@@ -660,7 +710,8 @@ function repairJson(jsonText: string): string {
     }
   });
 
-  // Fix exercise field with special characters (needs custom function)
+  // Step 5: Fix exercise field with special characters
+  console.log('Step 5: Fixing exercise field special characters...');
   repaired = repaired.replace(/\"exercise\":\s*([^",}\]]+?)\s*\([^)]+\)/g, (match, exercise) => {
       return `"exercise": "${exercise.trim()} (${match.match(/\([^)]+\)/)?.[0] || ''})"`;
   });
@@ -668,31 +719,126 @@ function repairJson(jsonText: string): string {
   // Fix any remaining unquoted string values
   repaired = repaired.replace(/:\s*([^",}\]\d][^,}\]]*[^,}\]\d])(\s*[,}\]])/g, (match: string, value: string, end: string) => {
       const trimmedValue = value.trim();
-    // Skip if it's a number, boolean, or null
-    if (!isNaN(Number(trimmedValue)) || 
-        ['true', 'false', 'null'].includes(trimmedValue.toLowerCase())) {
-      return match;
-    }
-    return `: "${trimmedValue}"${end}`;
-  });
+      // Skip if it's a number, boolean, or null
+      if (!isNaN(Number(trimmedValue)) || 
+          ['true', 'false', 'null'].includes(trimmedValue.toLowerCase())) {
+        return match;
+      }
+      return `: "${trimmedValue}"${end}`;
+    });
 
-  // Clean up whitespace
+  // Step 6: Clean up whitespace and final formatting
+  console.log('Step 6: Final cleanup and formatting...');
   repaired = repaired
     .replace(/\s+/g, ' ')
     .replace(/\s*,\s*/g, ', ')
     .replace(/\s*:\s*/g, ': ')
-    .replace(/\s*{\s*/g, '{ ')
-    .replace(/\s*}\s*/g, ' }')
-    .replace(/\s*\[\s*/g, '[ ')
-    .replace(/\s*\]\s*/g, ' ]')
     .trim();
-  
+
+  console.log('JSON repair completed. Original length:', jsonText.length, 'Repaired length:', repaired.length);
   return repaired;
 }
 
 /**
- * Calls Gemini API with the prompt - tries multiple model versions for reliability
+ * Multiple JSON parsing strategies with fallbacks
  */
+function parseJsonWithMultipleStrategies(jsonText: string): { success: boolean; data?: any; error?: string; strategy?: string } {
+  console.log('Attempting multiple JSON parsing strategies...');
+  
+  const strategies = [
+    {
+      name: 'Direct Parse',
+      fn: () => JSON.parse(jsonText)
+    },
+    {
+      name: 'Trimmed Parse',
+      fn: () => JSON.parse(jsonText.trim())
+    },
+    {
+      name: 'Repaired Parse',
+      fn: () => JSON.parse(repairJson(jsonText))
+    },
+    {
+      name: 'Error Marker Removal',
+      fn: () => {
+        const cleaned = jsonText
+          .replace(/\[ERROR\]/g, '')
+          .replace(/\[WARNING\]/g, '')
+          .replace(/\[INFO\]/g, '')
+          .replace(/error:/gi, '')
+          .replace(/warning:/gi, '')
+          .replace(/info:/gi, '');
+        return JSON.parse(cleaned);
+      }
+    },
+    {
+      name: 'Double Quote Fix',
+      fn: () => {
+        const fixed = jsonText
+          .replace(/:\s*""([^"]*?)""/g, ': "$1"')
+          .replace(/:\s*"""([^"]*?)"""/g, ': "$1"')
+          .replace(/:\s*"([^"]*?)""/g, ': "$1"')
+          .replace(/:\s*""([^"]*?)"/g, ': "$1"');
+        return JSON.parse(fixed);
+      }
+    },
+    {
+      name: 'Extract JSON Object',
+      fn: () => {
+        const match = jsonText.match(/\{[\s\S]*\}/);
+        if (match) {
+          return JSON.parse(repairJson(match[0]));
+        }
+        throw new Error('No JSON object found');
+      }
+    },
+    {
+      name: 'Aggressive Repair',
+      fn: () => {
+        let aggressive = jsonText
+          // Remove all error markers
+          .replace(/\[[^\]]*\]/g, '')
+          // Fix double quotes
+          .replace(/""/g, '"')
+          // Fix missing commas
+          .replace(/}\s*{/g, '}, {')
+          .replace(/]\s*{/g, '], {')
+          // Fix unquoted strings
+          .replace(/:\s*([a-zA-Z][a-zA-Z0-9\s-]*[a-zA-Z0-9])(\s*[,}])/g, ':"$1"$2');
+        
+        return JSON.parse(aggressive);
+      }
+    }
+  ];
+
+  for (const strategy of strategies) {
+    try {
+      console.log(`Trying strategy: ${strategy.name}`);
+      const result = strategy.fn();
+      
+      // Validate the result has the expected structure
+      if (result && typeof result === 'object') {
+        if ((result.workout && Array.isArray(result.workout)) || 
+            (result.diet && Array.isArray(result.diet))) {
+          console.log(`✅ Strategy "${strategy.name}" succeeded`);
+          return { success: true, data: result, strategy: strategy.name };
+        }
+      }
+      
+      console.log(`Strategy "${strategy.name}" returned invalid structure`);
+    } catch (error) {
+      console.log(`Strategy "${strategy.name}" failed:`, error instanceof Error ? error.message : 'Unknown error');
+    }
+  }
+
+  console.log('❌ All parsing strategies failed');
+  return { 
+    success: false, 
+    error: 'All JSON parsing strategies failed',
+    strategy: 'none'
+  };
+}
+
 /**
  * Pre-processes the raw Gemini response to ensure consistent formatting
  */
@@ -918,12 +1064,31 @@ async function callGeminiAPI(prompt: string): Promise<GeminiResponse> {
  * Processes the raw Gemini response text and returns parsed JSON
  */
 function processGeminiResponse(generatedText: string): GeminiResponse {
-  // Enhanced logging for debugging
-  console.log('Processing Gemini response...');
+  console.log('Processing Gemini response with enhanced parsing...');
   console.log('Raw response length:', generatedText.length);
   console.log('Response preview:', generatedText.substring(0, 200));
   
-  // Extract JSON from the response with enhanced markdown handling
+  // First, try our new multiple parsing strategies
+  const parseResult = parseJsonWithMultipleStrategies(generatedText);
+  
+  if (parseResult.success && parseResult.data) {
+    console.log(`✅ JSON parsing succeeded using strategy: ${parseResult.strategy}`);
+    
+    // Validate the parsed data structure
+    const validation = validatePlanStructure(parseResult.data);
+    if (validation.isValid) {
+      return parseResult.data as GeminiResponse;
+    } else if (validation.canFix && validation.fixedPlan) {
+      console.log('Plan structure was fixed during validation');
+      return validation.fixedPlan;
+    } else {
+      console.log('Plan structure validation failed:', validation.errors);
+    }
+  }
+  
+  console.log('Multiple parsing strategies failed, falling back to legacy processing...');
+  
+  // Fallback to legacy processing
   let jsonText = generatedText.trim();
   
   // First clean up any markdown and extra characters
@@ -1316,7 +1481,7 @@ function getDayName(index: number): string {
 }
 
 /**
- * Gets context around a JSON parse error
+ * Enhanced error context function with better debugging information
  */
 function getErrorContext(error: Error, jsonText: string): string {
   let context = '';
@@ -1326,8 +1491,8 @@ function getErrorContext(error: Error, jsonText: string): string {
     const posMatch = error.message.match(/position (\d+)/);
     if (posMatch) {
       const pos = parseInt(posMatch[1]);
-      const start = Math.max(0, pos - 50);
-      const end = Math.min(jsonText.length, pos + 50);
+      const start = Math.max(0, pos - 100);
+      const end = Math.min(jsonText.length, pos + 100);
       context = `...${jsonText.substring(start, pos)}[ERROR]${jsonText.substring(pos, end)}...`;
     }
     
@@ -1340,9 +1505,111 @@ function getErrorContext(error: Error, jsonText: string): string {
         context += `\nLine ${line}, Column ${column}:\n${lines[parseInt(line) - 1]}`;
       }
     }
+    
+    // Add specific error analysis
+    if (error.message.includes('Expected')) {
+      context += `\n\nError Analysis: ${error.message}`;
+      
+      // Check for common issues
+      if (jsonText.includes('""')) {
+        context += '\n⚠️  Detected double quotes - this is a known issue';
+      }
+      if (jsonText.includes('[ERROR]')) {
+        context += '\n⚠️  Detected [ERROR] markers in JSON';
+      }
+      if (jsonText.includes('""')) {
+        context += '\n⚠️  Detected malformed string values';
+      }
+    }
   }
   
   return context || 'No specific error context available';
+}
+
+/**
+ * Checks if user can regenerate a specific plan type
+ */
+async function checkRegenerationLimit(
+  supabase: any,
+  userId: string,
+  planType: 'workout' | 'diet' | 'both'
+): Promise<RateLimitResult> {
+  try {
+    const { data: limit, error } = await supabase
+      .from('user_regeneration_limits')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('plan_type', planType)
+      .single();
+
+    if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
+      console.error('Error checking regeneration limit:', error);
+      // If there's an error, allow regeneration (fail open)
+      return { canRegenerate: true };
+    }
+
+    if (!limit) {
+      // No limit found, user can regenerate
+      return { canRegenerate: true };
+    }
+
+    const lastRegenerated = new Date(limit.last_regenerated_at);
+    const now = new Date();
+    const hoursSinceLastRegeneration = (now.getTime() - lastRegenerated.getTime()) / (1000 * 60 * 60);
+
+    if (hoursSinceLastRegeneration >= 24) {
+      // 24 hours have passed, user can regenerate
+      return { canRegenerate: true };
+    }
+
+    // Calculate when user can regenerate again
+    const nextAvailableAt = new Date(lastRegenerated.getTime() + (24 * 60 * 60 * 1000));
+    const hoursRemaining = Math.ceil((nextAvailableAt.getTime() - now.getTime()) / (1000 * 60 * 60));
+
+    return {
+      canRegenerate: false,
+      nextAvailableAt,
+      hoursRemaining,
+      message: `You can regenerate your ${planType} plan in ${hoursRemaining} hours`
+    };
+
+  } catch (error) {
+    console.error('Error in checkRegenerationLimit:', error);
+    // Fail open - allow regeneration if there's an error
+    return { canRegenerate: true };
+  }
+}
+
+/**
+ * Updates the regeneration limit for a user after successful regeneration
+ */
+async function updateRegenerationLimit(
+  supabase: any,
+  userId: string,
+  planType: 'workout' | 'diet' | 'both'
+): Promise<void> {
+  try {
+    const now = new Date().toISOString();
+    
+    const { error } = await supabase
+      .from('user_regeneration_limits')
+      .upsert({
+        user_id: userId,
+        plan_type: planType,
+        last_regenerated_at: now,
+        updated_at: now
+      }, {
+        onConflict: 'user_id,plan_type'
+      });
+
+    if (error) {
+      console.error('Error updating regeneration limit:', error);
+      // Don't throw error - this is not critical for plan generation
+    }
+  } catch (error) {
+    console.error('Error in updateRegenerationLimit:', error);
+    // Don't throw error - this is not critical for plan generation
+  }
 }
 
 /**
@@ -1436,6 +1703,27 @@ serve(async (req) => {
           headers: { 'Content-Type': 'application/json' },
         }
       )
+    }
+
+    // NEW: Check rate limiting for regeneration requests
+    if (regenerate) {
+      const rateLimitResult = await checkRegenerationLimit(supabase, userId, planType);
+      
+      if (!rateLimitResult.canRegenerate) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'Rate limit exceeded',
+            message: rateLimitResult.message,
+            nextAvailableAt: rateLimitResult.nextAvailableAt?.toISOString(),
+            hoursRemaining: rateLimitResult.hoursRemaining
+          }),
+          {
+            status: 429, // Too Many Requests
+            headers: { 'Content-Type': 'application/json' },
+          }
+        )
+      }
     }
 
     // Check if user already has an active plan and regeneration is not requested
@@ -1682,6 +1970,11 @@ serve(async (req) => {
 
       if (updateError) {
         throw new Error(`Failed to update plan: ${updateError.message}`)
+      }
+
+      // NEW: Update rate limit after successful regeneration
+      if (regenerate) {
+        await updateRegenerationLimit(supabase, userId, planType);
       }
 
       return new Response(

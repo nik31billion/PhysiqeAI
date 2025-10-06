@@ -21,6 +21,7 @@ import {
   DietPlan,
   StoredPlan
 } from '../utils/planService';
+import { useRateLimit } from '../utils/useRateLimit';
 // Import Coach Glow components
 import { CoachGlowChat } from '../components';
 // Real-time hooks handle data fetching
@@ -72,6 +73,11 @@ const PlanScreen: React.FC = () => {
   const [isCompletingAllExercises, setIsCompletingAllExercises] = useState(false);
   const [isCoachGlowVisible, setIsCoachGlowVisible] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string>(''); // Empty means current day
+  
+  // NEW: Rate limiting hooks for regeneration buttons
+  const workoutRateLimit = useRateLimit(user?.id || '', 'workout');
+  const dietRateLimit = useRateLimit(user?.id || '', 'diet');
+  const bothRateLimit = useRateLimit(user?.id || '', 'both');
   const [currentDate, setCurrentDate] = useState<string>(new Date().toISOString().split('T')[0]);
   
   // New state for meal actions

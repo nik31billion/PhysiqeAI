@@ -112,26 +112,43 @@ const OnboardingScreen20: React.FC = () => {
     }
     
     // CRITICAL FIX: Use a recursive setTimeout instead of setInterval for more reliability
-    const updateProgress = () => {
+    const updateProgress = async () => {
       const elapsedTime = Date.now() - startTime;
       let { progress, stageIndex } = calculateProgressEstimation(startTime);
       
-      // CRITICAL FIX: Only apply backend completion logic if backend is actually completed
-      // AND we're at a reasonable progress level (not jumping from 7% to 100%)
-      if (actualPlanStatus === 'completed' && progress >= 90) {
-        // Calculate how long since backend completed
-        const timeSinceCompletion = elapsedTime - (planGenerationStartTime ? Date.now() - planGenerationStartTime : 0);
-        
-        // If backend completed and we're at 90%+, smoothly go to 100%
-        if (progress >= 90) {
-          // Smooth transition to 100% over 2-3 seconds
-          const completionProgress = Math.min(90 + (timeSinceCompletion / 2000) * 10, 100);
-          progress = Math.floor(completionProgress);
-          stageIndex = progressStages.length - 1; // Final stage
+      // CRITICAL FIX: Get the current status from the hook, not the closure
+      // Also check if we have a completed plan in the database
+      let currentStatus = planGenerationStatus === 'completed' ? 'completed' : 
+                         planGenerationStatus === 'failed' ? 'failed' : 
+                         planGenerationStatus === 'generating' ? 'generating' : 'not_started';
+      
+      // CRITICAL FIX: If the hook status is still generating but we've been running for a while,
+      // check if the plan is actually completed by looking at the database
+      if (currentStatus === 'generating' && elapsedTime > 30000) { // After 30 seconds
+        try {
+          const status = await getPlanGenerationStatus(user?.id || '');
+          if (status === 'completed') {
+            currentStatus = 'completed';
+            console.log('[Onboarding] Detected plan completion via database check');
+          }
+        } catch (error) {
+          // Ignore errors, keep current status
         }
       }
       
-      console.log(`[Onboarding] Progress update: ${elapsedTime}ms elapsed, ${progress}%, stage ${stageIndex}, current estimated: ${estimatedProgress}, backend status: ${actualPlanStatus}`);
+      // CRITICAL FIX: When plan is completed, smoothly transition to 100% regardless of current progress
+      if (currentStatus === 'completed') {
+        // Calculate how long since backend completed
+        const timeSinceCompletion = elapsedTime - (planGenerationStartTime ? Date.now() - planGenerationStartTime : 0);
+        
+        // Smooth transition to 100% over 2-3 seconds from current progress
+        const completionProgress = Math.min(progress + (timeSinceCompletion / 2000) * (100 - progress), 100);
+        progress = Math.floor(completionProgress);
+        stageIndex = progressStages.length - 1; // Final stage
+      }
+      
+      
+      console.log(`[Onboarding] Progress update: ${elapsedTime}ms elapsed, ${progress}%, stage ${stageIndex}, current estimated: ${estimatedProgress}, backend status: ${currentStatus}`);
       
       // CRITICAL FIX: Update state and animation immediately
       setEstimatedProgress(progress);
@@ -149,10 +166,10 @@ const OnboardingScreen20: React.FC = () => {
       }).start();
       
       // CRITICAL FIX: Always continue the timer unless we've reached 100% or failed
-      if (actualPlanStatus === 'failed') {
+      if (currentStatus === 'failed') {
         console.log('[Onboarding] Plan generation failed, stopping progress timer');
         progressTimerRef.current = null;
-      } else if (actualPlanStatus === 'completed' && progress >= 100) {
+      } else if (currentStatus === 'completed' && progress >= 100) {
         // Only stop when we've reached 100% naturally
         console.log('[Onboarding] Progress completed naturally at 100%, stopping timer');
         progressTimerRef.current = null;
@@ -163,7 +180,7 @@ const OnboardingScreen20: React.FC = () => {
         setCurrentTipIndex(progressStages.length - 1);
       } else {
         // Continue the timer for all other cases (generating, not_started, completed but < 100%)
-        progressTimerRef.current = setTimeout(updateProgress, 250) as any;
+        progressTimerRef.current = setTimeout(() => updateProgress(), 250) as any;
         console.log(`[Onboarding] Continuing progress timer, next update in 250ms, ref: ${progressTimerRef.current}`);
       }
     };
@@ -176,7 +193,7 @@ const OnboardingScreen20: React.FC = () => {
     updateProgress();
     
     // Then start the recursive timer
-    progressTimerRef.current = setTimeout(updateProgress, 250) as any;
+    progressTimerRef.current = setTimeout(() => updateProgress(), 250) as any;
     console.log('[Onboarding] Progress timer started, ref:', progressTimerRef.current);
   };
   

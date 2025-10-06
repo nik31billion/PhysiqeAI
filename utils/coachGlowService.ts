@@ -80,6 +80,25 @@ export async function sendMessageToCoachGlow(
 }
 
 /**
+ * Concurrent version of Coach Glow chat - processes multiple requests simultaneously
+ * @param message - Coach Glow message
+ * @returns Promise resolving to Coach Glow response
+ */
+export async function sendMessageToCoachGlowConcurrently(
+  message: CoachGlowMessage
+): Promise<CoachGlowResponse> {
+  const { concurrentLLMProcessor } = await import('./concurrentLLMProcessor');
+  
+  console.log(`[CoachGlowService] Adding chat request to concurrent processor for user ${message.userId}`);
+  
+  return await concurrentLLMProcessor.addRequest(
+    message.userId,
+    'coach_chat',
+    message
+  );
+}
+
+/**
  * Applies a plan swap when user confirms the change
  */
 export async function applyPlanSwap(

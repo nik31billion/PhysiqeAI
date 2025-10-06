@@ -38,12 +38,41 @@ let globalUserData: {
 // Event listeners for instant updates
 const listeners: Set<() => void> = new Set();
 
+// Specific event listeners for different types of updates
+const mealCompletionListeners: Set<() => void> = new Set();
+const exerciseCompletionListeners: Set<() => void> = new Set();
+const calorieUpdateListeners: Set<() => void> = new Set();
+
 /**
  * Subscribe to data changes for instant updates
  */
 export const subscribeToDataChanges = (callback: () => void): (() => void) => {
   listeners.add(callback);
   return () => listeners.delete(callback);
+};
+
+/**
+ * Subscribe to meal completion events
+ */
+export const subscribeToMealCompletion = (callback: () => void): (() => void) => {
+  mealCompletionListeners.add(callback);
+  return () => mealCompletionListeners.delete(callback);
+};
+
+/**
+ * Subscribe to exercise completion events
+ */
+export const subscribeToExerciseCompletion = (callback: () => void): (() => void) => {
+  exerciseCompletionListeners.add(callback);
+  return () => exerciseCompletionListeners.delete(callback);
+};
+
+/**
+ * Subscribe to calorie update events
+ */
+export const subscribeToCalorieUpdates = (callback: () => void): (() => void) => {
+  calorieUpdateListeners.add(callback);
+  return () => calorieUpdateListeners.delete(callback);
 };
 
 /**
@@ -475,8 +504,23 @@ export const handleMealCompletion = (userId: string, planId: string, mealIndex: 
   try {
     
     
+    // Initialize completion stats if not available (fix for first-launch issue)
+    if (!globalUserData.completionStats) {
+      globalUserData.completionStats = {
+        totalDaysCompleted: 0,
+        currentStreak: 0,
+        bestStreak: 0,
+        completedDates: [],
+        weeklyProgress: 0,
+        totalMealsCompleted: 0,
+        mealsCompletedToday: 0,
+        totalExercisesCompleted: 0,
+        exercisesCompletedToday: 0
+      };
+    }
+    
     // Update completion stats instantly
-    const currentStats = globalUserData.completionStats || {};
+    const currentStats = globalUserData.completionStats;
     const updatedStats = {
       ...currentStats,
       totalMealsCompleted: (currentStats.totalMealsCompleted || 0) + 1,
@@ -485,6 +529,11 @@ export const handleMealCompletion = (userId: string, planId: string, mealIndex: 
     };
     
     updateCompletionStats(userId, updatedStats);
+    
+    // Initialize completed days if not available (fix for first-launch issue)
+    if (!globalUserData.completedDays) {
+      globalUserData.completedDays = new Set();
+    }
     
     // Update completed days instantly - use Set for consistency
     const currentDays = globalUserData.completedDays;
@@ -504,8 +553,22 @@ export const handleMealCompletion = (userId: string, planId: string, mealIndex: 
     // as that's only for full day completion
     updateCompletedDays(userId, updatedDaysSet);
     
+    // Initialize aura summary if not available (fix for first-launch issue)
+    if (!globalUserData.auraSummary) {
+      globalUserData.auraSummary = {
+        total_aura: 0,
+        current_streak: 0,
+        best_streak: 0,
+        daily_aura_earned: 0,
+        achievements_unlocked: [],
+        shares_today: 0,
+        coach_glo_interactions_today: 0,
+        updated_at: new Date().toISOString()
+      };
+    }
+    
     // Update aura instantly - add 3 points for meal completion
-    const currentAura = globalUserData.auraSummary || {};
+    const currentAura = globalUserData.auraSummary;
     const updatedAura = {
       ...currentAura,
       total_aura: (currentAura.total_aura || 0) + 3,
@@ -514,6 +577,15 @@ export const handleMealCompletion = (userId: string, planId: string, mealIndex: 
     };
     
     updateAuraSummary(userId, updatedAura);
+    
+    // Notify specific listeners immediately for instant UI updates
+    mealCompletionListeners.forEach(callback => {
+      try {
+        callback();
+      } catch (error) {
+        console.error('Error in meal completion listener:', error);
+      }
+    });
     
     // Also update the database in the background to persist the data
     setTimeout(async () => {
@@ -540,8 +612,23 @@ export const handleExerciseCompletion = (userId: string, planId: string, exercis
   try {
     
     
+    // Initialize completion stats if not available (fix for first-launch issue)
+    if (!globalUserData.completionStats) {
+      globalUserData.completionStats = {
+        totalDaysCompleted: 0,
+        currentStreak: 0,
+        bestStreak: 0,
+        completedDates: [],
+        weeklyProgress: 0,
+        totalMealsCompleted: 0,
+        mealsCompletedToday: 0,
+        totalExercisesCompleted: 0,
+        exercisesCompletedToday: 0
+      };
+    }
+    
     // Update completion stats instantly
-    const currentStats = globalUserData.completionStats || {};
+    const currentStats = globalUserData.completionStats;
     const updatedStats = {
       ...currentStats,
       totalExercisesCompleted: (currentStats.totalExercisesCompleted || 0) + 1,
@@ -550,6 +637,11 @@ export const handleExerciseCompletion = (userId: string, planId: string, exercis
     };
     
     updateCompletionStats(userId, updatedStats);
+    
+    // Initialize completed days if not available (fix for first-launch issue)
+    if (!globalUserData.completedDays) {
+      globalUserData.completedDays = new Set();
+    }
     
     // Update completed days instantly - use Set for consistency
     const currentDays = globalUserData.completedDays;
@@ -569,8 +661,22 @@ export const handleExerciseCompletion = (userId: string, planId: string, exercis
     // as that's only for full day completion
     updateCompletedDays(userId, updatedDaysSet);
     
+    // Initialize aura summary if not available (fix for first-launch issue)
+    if (!globalUserData.auraSummary) {
+      globalUserData.auraSummary = {
+        total_aura: 0,
+        current_streak: 0,
+        best_streak: 0,
+        daily_aura_earned: 0,
+        achievements_unlocked: [],
+        shares_today: 0,
+        coach_glo_interactions_today: 0,
+        updated_at: new Date().toISOString()
+      };
+    }
+    
     // Update aura instantly - add 10 points for exercise completion
-    const currentAura = globalUserData.auraSummary || {};
+    const currentAura = globalUserData.auraSummary;
     const updatedAura = {
       ...currentAura,
       total_aura: (currentAura.total_aura || 0) + 10,
@@ -640,8 +746,23 @@ export const handleBulkMealCompletion = (userId: string, planId: string, remaini
   try {
     
     
+    // Initialize completion stats if not available (fix for first-launch issue)
+    if (!globalUserData.completionStats) {
+      globalUserData.completionStats = {
+        totalDaysCompleted: 0,
+        currentStreak: 0,
+        bestStreak: 0,
+        completedDates: [],
+        weeklyProgress: 0,
+        totalMealsCompleted: 0,
+        mealsCompletedToday: 0,
+        totalExercisesCompleted: 0,
+        exercisesCompletedToday: 0
+      };
+    }
+    
     // Update completion stats instantly - only for remaining meals
-    const currentStats = globalUserData.completionStats || {};
+    const currentStats = globalUserData.completionStats;
     const updatedStats = {
       ...currentStats,
       totalMealsCompleted: (currentStats.totalMealsCompleted || 0) + remainingMealCount,
@@ -650,6 +771,11 @@ export const handleBulkMealCompletion = (userId: string, planId: string, remaini
     };
     
     updateCompletionStats(userId, updatedStats);
+    
+    // Initialize completed days if not available (fix for first-launch issue)
+    if (!globalUserData.completedDays) {
+      globalUserData.completedDays = new Set();
+    }
     
     // Update completed days instantly - use Set for consistency
     const currentDays = globalUserData.completedDays;
@@ -668,8 +794,22 @@ export const handleBulkMealCompletion = (userId: string, planId: string, remaini
     // as that's only for full day completion
     updateCompletedDays(userId, updatedDaysSet);
     
+    // Initialize aura summary if not available (fix for first-launch issue)
+    if (!globalUserData.auraSummary) {
+      globalUserData.auraSummary = {
+        total_aura: 0,
+        current_streak: 0,
+        best_streak: 0,
+        daily_aura_earned: 0,
+        achievements_unlocked: [],
+        shares_today: 0,
+        coach_glo_interactions_today: 0,
+        updated_at: new Date().toISOString()
+      };
+    }
+    
     // Update aura instantly - add 3 points per remaining meal completion only
-    const currentAura = globalUserData.auraSummary || {};
+    const currentAura = globalUserData.auraSummary;
     const auraPoints = remainingMealCount * 3;
     const updatedAura = {
       ...currentAura,
@@ -679,6 +819,15 @@ export const handleBulkMealCompletion = (userId: string, planId: string, remaini
     };
     
     updateAuraSummary(userId, updatedAura);
+    
+    // Notify specific listeners immediately for instant UI updates
+    mealCompletionListeners.forEach(callback => {
+      try {
+        callback();
+      } catch (error) {
+        console.error('Error in bulk meal completion listener:', error);
+      }
+    });
     
     // Also update the database in the background to persist the data
     setTimeout(async () => {
@@ -705,8 +854,23 @@ export const handleBulkExerciseCompletion = (userId: string, planId: string, rem
   try {
     
     
+    // Initialize completion stats if not available (fix for first-launch issue)
+    if (!globalUserData.completionStats) {
+      globalUserData.completionStats = {
+        totalDaysCompleted: 0,
+        currentStreak: 0,
+        bestStreak: 0,
+        completedDates: [],
+        weeklyProgress: 0,
+        totalMealsCompleted: 0,
+        mealsCompletedToday: 0,
+        totalExercisesCompleted: 0,
+        exercisesCompletedToday: 0
+      };
+    }
+    
     // Update completion stats instantly - only for remaining exercises
-    const currentStats = globalUserData.completionStats || {};
+    const currentStats = globalUserData.completionStats;
     const updatedStats = {
       ...currentStats,
       totalExercisesCompleted: (currentStats.totalExercisesCompleted || 0) + remainingExerciseCount,
@@ -715,6 +879,11 @@ export const handleBulkExerciseCompletion = (userId: string, planId: string, rem
     };
     
     updateCompletionStats(userId, updatedStats);
+    
+    // Initialize completed days if not available (fix for first-launch issue)
+    if (!globalUserData.completedDays) {
+      globalUserData.completedDays = new Set();
+    }
     
     // Update completed days instantly - use Set for consistency
     const currentDays = globalUserData.completedDays;
@@ -733,8 +902,22 @@ export const handleBulkExerciseCompletion = (userId: string, planId: string, rem
     // as that's only for full day completion
     updateCompletedDays(userId, updatedDaysSet);
     
+    // Initialize aura summary if not available (fix for first-launch issue)
+    if (!globalUserData.auraSummary) {
+      globalUserData.auraSummary = {
+        total_aura: 0,
+        current_streak: 0,
+        best_streak: 0,
+        daily_aura_earned: 0,
+        achievements_unlocked: [],
+        shares_today: 0,
+        coach_glo_interactions_today: 0,
+        updated_at: new Date().toISOString()
+      };
+    }
+    
     // Update aura instantly - add 10 points per remaining exercise completion only
-    const currentAura = globalUserData.auraSummary || {};
+    const currentAura = globalUserData.auraSummary;
     const auraPoints = remainingExerciseCount * 10;
     const updatedAura = {
       ...currentAura,

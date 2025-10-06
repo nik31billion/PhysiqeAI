@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react'
 import { 
-  sendMessageToCoachGlow, 
+  sendMessageToCoachGlowConcurrently, 
   applyPlanSwap, 
   getCoachGlowChatHistory,
   CoachGlowMessage,
@@ -73,7 +73,7 @@ export function useCoachGlow({
         created_at: chat.created_at
       }))
 
-      const response = await sendMessageToCoachGlow({
+      const response = await sendMessageToCoachGlowConcurrently({
         userId,
         message: message.trim(),
         context,

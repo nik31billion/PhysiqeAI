@@ -10,6 +10,7 @@ import {
   Animated,
   TextInput,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
@@ -53,14 +54,33 @@ const OnboardingScreen21: React.FC = () => {
     );
     glowLoop.start();
 
-    // Fetch RevenueCat offerings
+    // Fetch RevenueCat offerings with enhanced iOS debugging
     const loadOfferings = async () => {
       try {
         setOfferingsError(null);
+        console.log(`🔄 Loading offerings for platform: ${Platform.OS}`);
         await fetchOfferings();
-      } catch (error) {
-        console.error('Error fetching offerings:', error);
-        setOfferingsError('Failed to load subscription plans. Please check your internet connection.');
+      } catch (error: any) {
+        console.error(`❌ Error fetching offerings on ${Platform.OS}:`, {
+          message: error.message,
+          code: error.code,
+          platform: Platform.OS
+        });
+        
+        // iOS-specific error messages
+        if (Platform.OS === 'ios') {
+          if (error.code === 'NETWORK_ERROR') {
+            setOfferingsError('Network error loading subscription plans. Please check your internet connection and try again.');
+          } else if (error.code === 'CONFIGURATION_ERROR') {
+            setOfferingsError('Subscription configuration error. Please contact support if this persists.');
+          } else if (error.message?.includes('API key')) {
+            setOfferingsError('Subscription service configuration issue. Please contact support.');
+          } else {
+            setOfferingsError('Failed to load subscription plans on iOS. Please check your internet connection and try again.');
+          }
+        } else {
+          setOfferingsError('Failed to load subscription plans. Please check your internet connection.');
+        }
       }
     };
 

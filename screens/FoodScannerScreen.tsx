@@ -56,7 +56,7 @@ const FoodScannerScreen: React.FC<FoodScannerScreenProps> = ({
       const analysisMode = scanMode === 'library' ? 'food' : scanMode;
       console.log(`Starting food analysis with mode: ${analysisMode}, scanMode: ${scanMode}`);
       
-      const analyzedItems = await geminiVisionService.analyzeFood(imageUri, analysisMode);
+      const analyzedItems = await geminiVisionService.analyzeFoodConcurrently(imageUri, analysisMode);
       setFoodItems(analyzedItems);
       // Only change screen AFTER we have the results
       setCurrentScreen('results');

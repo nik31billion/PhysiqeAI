@@ -19,7 +19,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../utils/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 import { useInstantStoredPlan, useInstantUserProfile } from '../utils/useInstantData';
-import { generatePlanViaEdgeFunction, StoredPlan, getPlanGenerationStatus } from '../utils/planService';
+import { useRateLimit } from '../utils/useRateLimit';
+import { generatePlanConcurrently, StoredPlan, getPlanGenerationStatus } from '../utils/planService';
 import { calculateProgressEstimation, DEFAULT_PROGRESS_STAGES } from '../utils/progressEstimation';
 import { getUserDisplayName } from '../utils/profileService';
 import { invalidateCacheForProfile } from '../utils/universalCacheInvalidation';
@@ -224,27 +225,41 @@ const PlanRegenerationModal: React.FC<PlanRegenerationModalProps> = ({
     }
     
     // CRITICAL FIX: Use a recursive setTimeout instead of setInterval for more reliability
-    const updateProgress = () => {
+    const updateProgress = async () => {
       // Use the standardized progress estimation utility
       let { progress, stageIndex } = calculateProgressEstimation(startTime);
       const elapsedTime = Date.now() - startTime;
       
-      // CRITICAL FIX: Only apply backend completion logic if backend is actually completed
-      // AND we're at a reasonable progress level (not jumping from 7% to 100%)
-      if (actualPlanStatus === 'completed' && progress >= 90) {
-        // Calculate how long since backend completed
-        const timeSinceCompletion = elapsedTime - (planGenerationStartTime ? Date.now() - planGenerationStartTime : 0);
-        
-        // If backend completed and we're at 90%+, smoothly go to 100%
-        if (progress >= 90) {
-          // Smooth transition to 100% over 2-3 seconds
-          const completionProgress = Math.min(90 + (timeSinceCompletion / 2000) * 10, 100);
-          progress = Math.floor(completionProgress);
-          stageIndex = progressStages.length - 1; // Final stage
+      // CRITICAL FIX: Get the current status from the hook, not the closure
+      let currentStatus = isGenerating ? 'generating' : 'completed';
+      
+      // CRITICAL FIX: If we think it's still generating but we've been running for a while,
+      // double-check by looking at the actual generation status
+      if (currentStatus === 'generating' && elapsedTime > 30000) { // After 30 seconds
+        try {
+          const status = await getPlanGenerationStatus(userId);
+          if (status === 'completed') {
+            currentStatus = 'completed';
+            console.log('[EditPlan] Detected plan completion via database check');
+          }
+        } catch (error) {
+          // Ignore errors, keep current status
         }
       }
       
-      console.log(`[EditPlan] Progress update: ${elapsedTime}ms elapsed, ${progress}%, stage ${stageIndex}, current estimated: ${estimatedProgress}, backend status: ${actualPlanStatus}`);
+      // CRITICAL FIX: When plan is completed, smoothly transition to 100% regardless of current progress
+      if (currentStatus === 'completed') {
+        // Calculate how long since backend completed
+        const timeSinceCompletion = elapsedTime - (planGenerationStartTime ? Date.now() - planGenerationStartTime : 0);
+        
+        // Smooth transition to 100% over 2-3 seconds from current progress
+        const completionProgress = Math.min(progress + (timeSinceCompletion / 2000) * (100 - progress), 100);
+        progress = Math.floor(completionProgress);
+        stageIndex = progressStages.length - 1; // Final stage
+      }
+      
+      
+      console.log(`[EditPlan] Progress update: ${elapsedTime}ms elapsed, ${progress}%, stage ${stageIndex}, current estimated: ${estimatedProgress}, backend status: ${currentStatus}`);
       
       // CRITICAL FIX: Update state and animation immediately
       setEstimatedProgress(progress);
@@ -262,10 +277,7 @@ const PlanRegenerationModal: React.FC<PlanRegenerationModalProps> = ({
       }).start();
       
       // CRITICAL FIX: Always continue the timer unless we've reached 100% or failed
-      if (actualPlanStatus === 'failed') {
-        console.log('[EditPlan] Plan generation failed, stopping progress timer');
-        progressTimerRef.current = null;
-      } else if (actualPlanStatus === 'completed' && progress >= 100) {
+      if (currentStatus === 'completed' && progress >= 100) {
         // Only stop when we've reached 100% naturally
         console.log('[EditPlan] Progress completed naturally at 100%, stopping timer');
         progressTimerRef.current = null;
@@ -276,7 +288,7 @@ const PlanRegenerationModal: React.FC<PlanRegenerationModalProps> = ({
         setCurrentTipIndex(progressStages.length - 1);
       } else {
         // Continue the timer for all other cases (generating, not_started, completed but < 100%)
-        progressTimerRef.current = setTimeout(updateProgress, 250) as any;
+        progressTimerRef.current = setTimeout(() => updateProgress(), 250) as any;
         console.log(`[EditPlan] Continuing progress timer, next update in 250ms, ref: ${progressTimerRef.current}`);
       }
     };
@@ -289,7 +301,7 @@ const PlanRegenerationModal: React.FC<PlanRegenerationModalProps> = ({
     updateProgress();
     
     // Then start the recursive timer
-    progressTimerRef.current = setTimeout(updateProgress, 250) as any;
+    progressTimerRef.current = setTimeout(() => updateProgress(), 250) as any;
     console.log('[EditPlan] Progress timer started, ref:', progressTimerRef.current);
   };
   
@@ -887,8 +899,36 @@ const EditPlanScreen: React.FC = () => {
   const [showRegenerationModal, setShowRegenerationModal] = useState(false);
   const [selectedPlanType, setSelectedPlanType] = useState<'workout' | 'diet' | 'both'>('both');
   const [modalActualPlanStatus, setModalActualPlanStatus] = useState<'generating' | 'completed' | 'failed' | 'not_started'>('not_started');
+  
+  // NEW: Rate limiting hooks for regeneration buttons
+  const workoutRateLimit = useRateLimit(user?.id || '', 'workout');
+  const dietRateLimit = useRateLimit(user?.id || '', 'diet');
+  const bothRateLimit = useRateLimit(user?.id || '', 'both');
 
   const handleRegeneratePlan = (planType: 'workout' | 'diet' | 'both') => {
+    // Check rate limiting before showing modal
+    let rateLimitInfo;
+    switch (planType) {
+      case 'workout':
+        rateLimitInfo = workoutRateLimit;
+        break;
+      case 'diet':
+        rateLimitInfo = dietRateLimit;
+        break;
+      case 'both':
+        rateLimitInfo = bothRateLimit;
+        break;
+    }
+
+    if (!rateLimitInfo.canRegenerate) {
+      Alert.alert(
+        'Rate Limit Exceeded',
+        rateLimitInfo.message || `You can regenerate your ${planType} plan later.`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     setSelectedPlanType(planType);
     setShowRegenerationModal(true);
   };
@@ -994,8 +1034,8 @@ const EditPlanScreen: React.FC = () => {
     try {
       console.log('Starting plan regeneration for planType:', selectedPlanType);
       
-      // Call the edge function to regenerate the plan
-      const response = await generatePlanViaEdgeFunction({
+      // Call the concurrent function to regenerate the plan
+      const response = await generatePlanConcurrently({
         userId: user.id,
         regenerate: true,
         planType: selectedPlanType
@@ -1042,6 +1082,19 @@ const EditPlanScreen: React.FC = () => {
     };
   };
 
+  const getRateLimitInfo = (planType: 'workout' | 'diet' | 'both') => {
+    switch (planType) {
+      case 'workout':
+        return workoutRateLimit;
+      case 'diet':
+        return dietRateLimit;
+      case 'both':
+        return bothRateLimit;
+      default:
+        return { canRegenerate: true };
+    }
+  };
+
   const renderPlanCard = (title: string, type: 'workout' | 'diet', icon: string, color: string) => {
     const summary = getPlanSummary();
     if (!summary) return null;
@@ -1078,12 +1131,21 @@ const EditPlanScreen: React.FC = () => {
           </View>
           
           <TouchableOpacity
-            style={[styles.regenerateButton, { backgroundColor: color }]}
+            style={[
+              styles.regenerateButton, 
+              { backgroundColor: color },
+              (!getRateLimitInfo(type).canRegenerate) && styles.disabledButton
+            ]}
             onPress={() => handleRegeneratePlan(type)}
-            disabled={isRegenerating}
+            disabled={isRegenerating || !getRateLimitInfo(type).canRegenerate}
           >
             <Ionicons name="refresh" size={16} color="#fff" />
-            <Text style={styles.regenerateButtonText}>Regenerate {title}</Text>
+            <Text style={styles.regenerateButtonText}>
+              {getRateLimitInfo(type).canRegenerate 
+                ? `Regenerate ${title}` 
+                : `${title} (${(getRateLimitInfo(type) as any).hoursRemaining || 0}h remaining)`
+              }
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1233,16 +1295,24 @@ const EditPlanScreen: React.FC = () => {
           </View>
           
           <TouchableOpacity
-            style={[styles.regenerateCompleteButton, isRegenerating && styles.disabledButton]}
+            style={[
+              styles.regenerateCompleteButton, 
+              (isRegenerating || !bothRateLimit.canRegenerate) && styles.disabledButton
+            ]}
             onPress={() => handleRegeneratePlan('both')}
-            disabled={isRegenerating}
+            disabled={isRegenerating || !bothRateLimit.canRegenerate}
           >
             {isRegenerating ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
               <>
                 <Ionicons name="refresh" size={20} color="#fff" />
-                <Text style={styles.regenerateCompleteButtonText}>Regenerate Complete Plan</Text>
+                <Text style={styles.regenerateCompleteButtonText}>
+                  {bothRateLimit.canRegenerate 
+                    ? 'Regenerate Complete Plan' 
+                    : `Complete Plan (${bothRateLimit.hoursRemaining}h remaining)`
+                  }
+                </Text>
               </>
             )}
           </TouchableOpacity>

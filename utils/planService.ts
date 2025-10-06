@@ -119,6 +119,23 @@ export async function generatePlanViaEdgeFunction(inputs: PlanGenerationInputs):
 }
 
 /**
+ * Concurrent version of plan generation - processes multiple requests simultaneously
+ * @param inputs - Plan generation inputs
+ * @returns Promise resolving to plan generation response
+ */
+export async function generatePlanConcurrently(inputs: PlanGenerationInputs): Promise<PlanGenerationResponse> {
+  const { concurrentLLMProcessor } = await import('./concurrentLLMProcessor');
+  
+  console.log(`[PlanService] Adding plan generation request to concurrent processor for user ${inputs.userId}`);
+  
+  return await concurrentLLMProcessor.addRequest(
+    inputs.userId,
+    'plan_generation',
+    inputs
+  );
+}
+
+/**
  * Fetches the user's active plan from the database
  * @param userId - User's ID
  * @returns Promise resolving to the user's active plan or null if none exists
