@@ -20,6 +20,11 @@ import { useAuth } from '../utils/AuthContext';
 
 const { width, height } = Dimensions.get('window');
 
+// iPad-specific responsive adjustments
+const isTablet = width >= 768;
+const responsiveWidth = isTablet ? Math.min(width * 0.4, 400) : width * 0.88;
+const responsiveMargin = isTablet ? (width - responsiveWidth) / 2 : width * 0.06;
+
 const SignUpScreen: React.FC = () => {
   const navigation = useNavigation();
   const { signUp } = useAuth();

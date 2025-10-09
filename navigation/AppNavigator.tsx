@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../utils/AuthContext';
 import { useOnboarding } from '../utils/OnboardingContext';
 import { loadUserData } from '../utils/instantDataManager';
-import { HomeScreen, PlanScreen, ProgressScreen, ProfileScreen, EditPlanScreen, OnboardingScreen1, OnboardingScreen2, OnboardingScreen4, OnboardingScreen5, OnboardingScreen6, OnboardingScreen7, OnboardingScreen8, OnboardingScreen9, OnboardingScreen10, OnboardingScreen11, OnboardingScreen12, OnboardingScreen13, OnboardingScreen14, OnboardingScreen15, OnboardingScreen16, OnboardingScreen17, OnboardingScreen18, SignUpScreen, LoginScreen, SettingsScreen, PrivacyPolicyScreen, TermsAndConditionsScreen, SubscriptionScreen } from '../screens';
+import { HomeScreen, PlanScreen, ProgressScreen, ProfileScreen, EditPlanScreen, OnboardingScreen1, OnboardingScreen2, OnboardingScreen4, OnboardingScreen5, OnboardingScreen6, OnboardingScreen7, OnboardingScreen8, OnboardingScreen9, OnboardingScreen10, OnboardingScreen11, OnboardingScreen12, OnboardingScreen13, OnboardingScreen14, OnboardingScreen15, OnboardingScreen16, OnboardingScreen17, OnboardingScreen18, SignUpScreen, LoginScreen, SettingsScreen, AboutCoachGlowScreen, PrivacyPolicyScreen, TermsAndConditionsScreen, SubscriptionScreen } from '../screens';
 import FoodScannerScreen from '../screens/FoodScannerScreen';
 import FloatingCameraButton from '../components/FloatingCameraButton';
 import OnboardingScreen19 from '../screens/OnboardingScreen19';
@@ -217,6 +217,7 @@ const AppNavigator: React.FC = () => {
             <Stack.Screen name="EditPlanScreen" component={EditPlanScreen} />
             <Stack.Screen name="FoodScannerScreen" component={FoodScannerScreen} />
             <Stack.Screen name="SettingsScreen" component={SettingsScreen} />
+            <Stack.Screen name="AboutCoachGlowScreen" component={AboutCoachGlowScreen} />
             <Stack.Screen name="PrivacyPolicyScreen" component={PrivacyPolicyScreen} />
             <Stack.Screen name="TermsAndConditionsScreen" component={TermsAndConditionsScreen} />
             <Stack.Screen name="SubscriptionScreen" component={SubscriptionScreen} />

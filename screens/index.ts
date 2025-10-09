@@ -30,6 +30,7 @@ export { default as OnboardingScreen22 } from './OnboardingScreen22';
 export { default as SignUpScreen } from './SignUpScreen';
 export { default as LoginScreen } from './LoginScreen';
 export { default as SettingsScreen } from './SettingsScreen';
+export { default as AboutCoachGlowScreen } from './AboutCoachGlowScreen';
 export { default as PrivacyPolicyScreen } from './PrivacyPolicyScreen';
 export { default as TermsAndConditionsScreen } from './TermsAndConditionsScreen';
 export { default as FoodScannerScreen } from './FoodScannerScreen';

@@ -21,6 +21,11 @@ import { useAuth } from '../utils/AuthContext';
 
 const { width, height } = Dimensions.get('window');
 
+// iPad-specific responsive adjustments
+const isTablet = width >= 768;
+const responsiveWidth = isTablet ? Math.min(width * 0.4, 400) : width * 0.88;
+const responsiveMargin = isTablet ? (width - responsiveWidth) / 2 : width * 0.06;
+
 const LoginScreen: React.FC = () => {
   const navigation = useNavigation();
   const { signIn } = useAuth();
@@ -191,7 +196,8 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
   },
   card: {
-    marginHorizontal: width * 0.06,
+    marginHorizontal: responsiveMargin,
+    width: responsiveWidth,
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 28,
     alignItems: 'center',
@@ -200,9 +206,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 30,
     elevation: 20,
-    paddingVertical: 30,
-    paddingHorizontal: 25,
-    minHeight: height * 0.7,
+    paddingVertical: isTablet ? 40 : 30,
+    paddingHorizontal: isTablet ? 35 : 25,
+    minHeight: isTablet ? height * 0.6 : height * 0.7,
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -228,8 +235,8 @@ const styles = StyleSheet.create({
     marginBottom: 25,
   },
   logoImage: {
-    width: 100,
-    height: 100,
+    width: isTablet ? 120 : 100,
+    height: isTablet ? 120 : 100,
   },
   mainText: {
     fontSize: 18,
@@ -253,21 +260,23 @@ const styles = StyleSheet.create({
     borderColor: '#A3FFC7',
     marginBottom: 15,
     paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingVertical: isTablet ? 16 : 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
     shadowRadius: 6,
     elevation: 4,
+    minHeight: isTablet ? 56 : 50, // Ensure minimum touch target size
   },
   inputIcon: {
     marginRight: 12,
   },
   textInput: {
     flex: 1,
-    fontSize: 15,
+    fontSize: isTablet ? 16 : 15,
     color: '#2D2D2D',
     fontWeight: '500',
+    minHeight: isTablet ? 44 : 40, // Ensure minimum touch target size
   },
   errorText: {
     color: '#FF6B6B',
@@ -289,11 +298,12 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   loginButton: {
-    paddingVertical: 16,
+    paddingVertical: isTablet ? 18 : 16,
     paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 21,
+    minHeight: isTablet ? 56 : 50, // Ensure minimum touch target size
   },
   loginButtonText: {
     fontSize: 16,

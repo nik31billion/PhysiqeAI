@@ -333,6 +333,13 @@ export default function CoachGlowChat({
             </TouchableOpacity>
           </View>
         )}
+
+        {/* Disclaimer */}
+        <View style={styles.disclaimerContainer}>
+          <Text style={styles.disclaimerText}>
+            Disclaimer: Coach Glow is an AI-powered fitness companion that provides general wellness, motivational, and educational content. It is not a medical device and does not offer medical, nutritional, or therapeutic advice. For personalized medical or dietary guidance, please consult a certified health professional.
+          </Text>
+        </View>
       </View>
     </Modal>
   )
@@ -540,5 +547,19 @@ const styles = StyleSheet.create({
     color: '#DC2626',
     fontSize: 14,
     fontWeight: '600'
+  },
+  disclaimerContainer: {
+    backgroundColor: '#F8F9FA',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E1E5E9'
+  },
+  disclaimerText: {
+    fontSize: 11,
+    color: '#6B7280',
+    lineHeight: 16,
+    textAlign: 'center',
+    fontStyle: 'italic'
   }
 })

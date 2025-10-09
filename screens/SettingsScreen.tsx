@@ -190,6 +190,19 @@ const SettingsScreen: React.FC = () => {
                 </View>
                 <Ionicons name="chevron-forward" size={16} color="#a2b2b7" />
               </TouchableOpacity>
+              
+              <View style={styles.divider} />
+              
+              <TouchableOpacity 
+                style={styles.settingItem}
+                onPress={() => navigation.navigate('AboutCoachGlowScreen' as never)}
+              >
+                <View style={styles.settingInfo}>
+                  <Ionicons name="information-circle-outline" size={20} color="#937AFD" />
+                  <Text style={styles.settingLabel}>About Coach Glow</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color="#a2b2b7" />
+              </TouchableOpacity>
             </View>
           </View>
 

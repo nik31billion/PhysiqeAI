@@ -159,10 +159,7 @@ const FoodScannerCamera: React.FC<FoodScannerCameraProps> = ({
         <Ionicons name="camera-outline" size={64} color="#ccc" />
         <Text style={styles.permissionText}>Camera access is required to scan food</Text>
         <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-          <Text style={styles.permissionButtonText}>Grant Permission</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.permissionButton, {marginTop: 10, backgroundColor: '#ccc'}]} onPress={onClose}>
-          <Text style={styles.permissionButtonText}>Go Back</Text>
+          <Text style={styles.permissionButtonText}>Continue</Text>
         </TouchableOpacity>
       </View>
     );
