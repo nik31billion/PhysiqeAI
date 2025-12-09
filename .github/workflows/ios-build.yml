@@ -25,11 +25,10 @@ jobs:
           fetch-depth: 0  # Fetch full history for versioning
 
       - name: 📦 Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: PhysiqeAI/package-lock.json
+          # No cache to avoid path resolution issues
 
       - name: 🔧 Install dependencies
         working-directory: ./PhysiqeAI
@@ -86,7 +85,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 📦 Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
           node-version: ${{ env.NODE_VERSION }}
 
