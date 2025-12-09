@@ -102,6 +102,14 @@ jobs:
             exit 1
           fi
           
+          # Debug: Show Podfile structure
+          echo "=== Podfile Debug Info ==="
+          echo "Podfile exists: $(test -f Podfile && echo 'YES' || echo 'NO')"
+          echo "Podfile size: $(wc -l < Podfile) lines"
+          echo "Searching for post_install patterns:"
+          grep -n "post_install" Podfile | head -5 || echo "No post_install found"
+          echo "=========================="
+          
           # Backup Podfile
           cp Podfile Podfile.backup
           
@@ -111,48 +119,68 @@ jobs:
             exit 0
           fi
           
-          # Check if post_install hook exists - it should always exist after expo prebuild
-          if ! grep -q "^post_install do" Podfile; then
-            echo "ERROR: post_install hook not found in Podfile!"
-            exit 1
-          fi
+          # Check if post_install hook exists (allow for indentation)
+          # Look for "post_install do" anywhere in the line, not just at start
+          POST_INSTALL_LINE=$(grep -n "post_install do" Podfile | head -1 | cut -d: -f1)
           
-          echo "Found existing post_install hook, adding code signing settings..."
-          # Create temp file with code signing block
-          echo "  # Disable code signing for Pods" > /tmp/code_signing_insert.txt
-          echo "  installer.pods_project.targets.each do |target|" >> /tmp/code_signing_insert.txt
-          echo "    target.build_configurations.each do |config|" >> /tmp/code_signing_insert.txt
-          echo "      config.build_settings['CODE_SIGN_IDENTITY'] = ''" >> /tmp/code_signing_insert.txt
-          echo "      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'" >> /tmp/code_signing_insert.txt
-          echo "      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'" >> /tmp/code_signing_insert.txt
-          echo "      config.build_settings['CODE_SIGN_STYLE'] = 'Manual'" >> /tmp/code_signing_insert.txt
-          echo "    end" >> /tmp/code_signing_insert.txt
-          echo "  end" >> /tmp/code_signing_insert.txt
-          
-          # Find the line with react_native_post_install (always present in expo prebuild)
-          # and insert our code signing block AFTER that line
-          REACT_NATIVE_LINE=$(grep -n "react_native_post_install" Podfile | head -1 | cut -d: -f1)
-          if [ -n "$REACT_NATIVE_LINE" ]; then
-            # Insert temp file content after react_native_post_install line
-            sed -i.bak "${REACT_NATIVE_LINE}r /tmp/code_signing_insert.txt" Podfile
-            rm -f /tmp/code_signing_insert.txt
+          if [ -z "$POST_INSTALL_LINE" ]; then
+            echo "WARNING: post_install hook not found, creating new one at end of Podfile..."
+            # Create new post_install hook at the end
+            echo "" >> Podfile
+            echo "post_install do |installer|" >> Podfile
+            echo "  # Disable code signing for Pods" >> Podfile
+            echo "  installer.pods_project.targets.each do |target|" >> Podfile
+            echo "    target.build_configurations.each do |config|" >> Podfile
+            echo "      config.build_settings['CODE_SIGN_IDENTITY'] = ''" >> Podfile
+            echo "      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'" >> Podfile
+            echo "      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'" >> Podfile
+            echo "      config.build_settings['CODE_SIGN_STYLE'] = 'Manual'" >> Podfile
+            echo "    end" >> Podfile
+            echo "  end" >> Podfile
+            echo "end" >> Podfile
           else
-            echo "WARNING: react_native_post_install not found, inserting before last 'end'..."
-            # Fallback: find the last 'end' and insert before it
-            LAST_END_LINE=$(grep -n "^end$" Podfile | tail -1 | cut -d: -f1)
-            if [ -n "$LAST_END_LINE" ]; then
-              sed -i.bak "${LAST_END_LINE}r /tmp/code_signing_insert.txt" Podfile
+            echo "Found existing post_install hook at line $POST_INSTALL_LINE, adding code signing settings..."
+            # Create temp file with code signing block
+            echo "  # Disable code signing for Pods" > /tmp/code_signing_insert.txt
+            echo "  installer.pods_project.targets.each do |target|" >> /tmp/code_signing_insert.txt
+            echo "    target.build_configurations.each do |config|" >> /tmp/code_signing_insert.txt
+            echo "      config.build_settings['CODE_SIGN_IDENTITY'] = ''" >> /tmp/code_signing_insert.txt
+            echo "      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'" >> /tmp/code_signing_insert.txt
+            echo "      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'" >> /tmp/code_signing_insert.txt
+            echo "      config.build_settings['CODE_SIGN_STYLE'] = 'Manual'" >> /tmp/code_signing_insert.txt
+            echo "    end" >> /tmp/code_signing_insert.txt
+            echo "  end" >> /tmp/code_signing_insert.txt
+            
+            # Find the line with react_native_post_install (always present in expo prebuild)
+            REACT_NATIVE_LINE=$(grep -n "react_native_post_install" Podfile | head -1 | cut -d: -f1)
+            if [ -n "$REACT_NATIVE_LINE" ]; then
+              echo "Found react_native_post_install at line $REACT_NATIVE_LINE, inserting after it..."
+              # Insert temp file content after react_native_post_install line
+              sed -i.bak "${REACT_NATIVE_LINE}r /tmp/code_signing_insert.txt" Podfile
+              rm -f /tmp/code_signing_insert.txt
+            else
+              echo "WARNING: react_native_post_install not found, inserting before last 'end'..."
+              # Fallback: find the last 'end' at start of line and insert before it
+              LAST_END_LINE=$(grep -n "^end$" Podfile | tail -1 | cut -d: -f1)
+              if [ -n "$LAST_END_LINE" ]; then
+                echo "Found last 'end' at line $LAST_END_LINE, inserting before it..."
+                sed -i.bak "${LAST_END_LINE}r /tmp/code_signing_insert.txt" Podfile
+              else
+                echo "ERROR: Could not find insertion point!"
+                rm -f /tmp/code_signing_insert.txt
+                exit 1
+              fi
+              rm -f /tmp/code_signing_insert.txt
             fi
-            rm -f /tmp/code_signing_insert.txt
           fi
           
           echo ""
-          echo "Verifying Podfile structure:"
+          echo "=== Verification ==="
           echo "Number of 'post_install do' declarations:"
-          grep -c "^post_install do" Podfile || echo "0"
+          grep -c "post_install do" Podfile || echo "0"
           echo ""
-          echo "Last 25 lines of Podfile:"
-          tail -25 Podfile
+          echo "Last 30 lines of Podfile:"
+          tail -30 Podfile
 
       - name: 📦 Install CocoaPods dependencies
         working-directory: ./ios
