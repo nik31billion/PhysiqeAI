@@ -130,6 +130,8 @@ PODFILE_FIX
         working-directory: ./ios
         run: |
           echo "Installing CocoaPods dependencies..."
+          echo "Verifying Podfile has post_install hook:"
+          grep -A 10 "post_install" Podfile || echo "WARNING: post_install not found!"
           sudo gem install cocoapods
           pod install --repo-update
 
