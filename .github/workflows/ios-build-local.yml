@@ -102,26 +102,47 @@ jobs:
             exit 1
           fi
           
-          # Remove existing post_install if present
-          sed -i.bak '/^post_install/,/^end$/d' Podfile
+          # Backup Podfile
+          cp Podfile Podfile.backup
           
-          # Add post_install hook to disable code signing for all Pods
-          cat >> Podfile << 'PODFILE_END'
-          post_install do |installer|
-            installer.pods_project.targets.each do |target|
-              target.build_configurations.each do |config|
-                config.build_settings['CODE_SIGN_IDENTITY'] = ''
-                config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
-                config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
-                config.build_settings['CODE_SIGN_STYLE'] = 'Manual'
-              end
-            end
+          # Remove existing post_install hooks (there might be multiple)
+          sed -i.bak '/^post_install do/,/^end$/d' Podfile
+          
+          # Find the last 'end' before any target definitions and add our post_install there
+          # Or append at the end if no suitable location found
+          if grep -q "^end$" Podfile; then
+            # Insert before the last 'end' (which closes the main Podfile block)
+            sed -i.bak '$ i\
+          post_install do |installer|\
+            installer.pods_project.targets.each do |target|\
+              target.build_configurations.each do |config|\
+                config.build_settings["CODE_SIGN_IDENTITY"] = ""\
+                config.build_settings["CODE_SIGNING_REQUIRED"] = "NO"\
+                config.build_settings["CODE_SIGNING_ALLOWED"] = "NO"\
+                config.build_settings["CODE_SIGN_STYLE"] = "Manual"\
+              end\
+            end\
           end
-          PODFILE_END
+' Podfile
+          else
+            # Append at the end
+            cat >> Podfile << 'PODFILE_END'
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['CODE_SIGN_IDENTITY'] = ''
+      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+      config.build_settings['CODE_SIGN_STYLE'] = 'Manual'
+    end
+  end
+end
+PODFILE_END
+          fi
           
           echo "✅ Podfile updated with code signing fix"
-          echo "Last 10 lines of Podfile:"
-          tail -10 Podfile
+          echo "Checking for duplicate post_install hooks:"
+          grep -c "post_install" Podfile || echo "No post_install found"
 
       - name: 📦 Install CocoaPods dependencies
         working-directory: ./ios
