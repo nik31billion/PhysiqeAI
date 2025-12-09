@@ -105,15 +105,87 @@ jobs:
           # Backup Podfile
           cp Podfile Podfile.backup
           
-          # Remove any existing post_install hooks first
-          sed -i.bak '/^post_install do/,/^end$/d' Podfile || true
+          # Use Python to properly handle the post_install hook
+          python3 << 'PYTHON_SCRIPT'
+import re
+import sys
+
+with open('Podfile', 'r') as f:
+    lines = f.readlines()
+
+# Check if code signing settings already exist
+content = ''.join(lines)
+if "CODE_SIGN_IDENTITY" in content and "CODE_SIGNING_REQUIRED" in content:
+    print("Code signing settings already present, skipping...")
+    sys.exit(0)
+
+# Find post_install block
+post_install_start = -1
+post_install_end = -1
+indent_level = 0
+in_post_install = False
+
+for i, line in enumerate(lines):
+    if re.match(r'^\s*post_install do', line):
+        post_install_start = i
+        in_post_install = True
+        # Count leading spaces to determine base indent
+        indent_level = len(line) - len(line.lstrip())
+    elif in_post_install:
+        # Check if this is the closing 'end' for post_install
+        # It should be at the same or less indent level as post_install
+        current_indent = len(line) - len(line.lstrip())
+        if line.strip() == 'end' and current_indent <= indent_level:
+            post_install_end = i
+            break
+
+if post_install_start >= 0 and post_install_end >= 0:
+    print(f"Found existing post_install hook (lines {post_install_start+1}-{post_install_end+1})")
+    # Insert code signing settings before the final 'end'
+    code_signing = ' ' * (indent_level + 2) + "# Disable code signing for Pods\n"
+    code_signing += ' ' * (indent_level + 2) + "installer.pods_project.targets.each do |target|\n"
+    code_signing += ' ' * (indent_level + 4) + "target.build_configurations.each do |config|\n"
+    code_signing += ' ' * (indent_level + 6) + "config.build_settings['CODE_SIGN_IDENTITY'] = ''\n"
+    code_signing += ' ' * (indent_level + 6) + "config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'\n"
+    code_signing += ' ' * (indent_level + 6) + "config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'\n"
+    code_signing += ' ' * (indent_level + 6) + "config.build_settings['CODE_SIGN_STYLE'] = 'Manual'\n"
+    code_signing += ' ' * (indent_level + 4) + "end\n"
+    code_signing += ' ' * (indent_level + 2) + "end\n"
+    
+    # Insert before the final 'end'
+    lines.insert(post_install_end, code_signing)
+else:
+    print("No existing post_install hook found, adding new one at the end...")
+    # Remove trailing newlines
+    while lines and lines[-1].strip() == '':
+        lines.pop()
+    
+    # Add new post_install hook
+    lines.append('\n')
+    lines.append('post_install do |installer|\n')
+    lines.append('  installer.pods_project.targets.each do |target|\n')
+    lines.append('    target.build_configurations.each do |config|\n')
+    lines.append("      config.build_settings['CODE_SIGN_IDENTITY'] = ''\n")
+    lines.append("      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'\n")
+    lines.append("      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'\n")
+    lines.append("      config.build_settings['CODE_SIGN_STYLE'] = 'Manual'\n")
+    lines.append('    end\n')
+    lines.append('  end\n')
+    lines.append('end\n')
+
+with open('Podfile', 'w') as f:
+    f.writelines(lines)
+
+print("✅ Podfile updated successfully")
+PYTHON_SCRIPT
           
-          # Add post_install hook at the end of Podfile using printf to avoid YAML issues
-          printf '\npost_install do |installer|\n  installer.pods_project.targets.each do |target|\n    target.build_configurations.each do |config|\n      config.build_settings['"'"'CODE_SIGN_IDENTITY'"'"'] = '"'"''"'"'\n      config.build_settings['"'"'CODE_SIGNING_REQUIRED'"'"'] = '"'"'NO'"'"'\n      config.build_settings['"'"'CODE_SIGNING_ALLOWED'"'"'] = '"'"'NO'"'"'\n      config.build_settings['"'"'CODE_SIGN_STYLE'"'"'] = '"'"'Manual'"'"'\n    end\n  end\nend\n' >> Podfile
-          
-          echo "✅ Podfile updated"
-          echo "Last 15 lines of Podfile:"
-          tail -15 Podfile
+          echo ""
+          echo "Verifying Podfile structure:"
+          echo "Number of 'post_install do' declarations:"
+          grep -c "^post_install do\|^  post_install do" Podfile || echo "0"
+          echo ""
+          echo "Last 25 lines of Podfile:"
+          tail -25 Podfile
 
       - name: 📦 Install CocoaPods dependencies
         working-directory: ./ios
