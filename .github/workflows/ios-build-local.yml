@@ -105,45 +105,45 @@ jobs:
           # Backup Podfile
           cp Podfile Podfile.backup
           
-          # Check if code signing settings already exist
+          # Check if code signing settings already exist - if yes, skip entirely
           if grep -q "CODE_SIGN_IDENTITY" Podfile && grep -q "CODE_SIGNING_REQUIRED" Podfile; then
             echo "Code signing settings already present, skipping..."
             exit 0
           fi
           
-          # Check if post_install hook exists
-          if grep -q "^post_install do" Podfile; then
-            echo "Found existing post_install hook, adding code signing settings..."
-            # Create temp file with code signing block using echo (no heredoc)
-            echo "  # Disable code signing for Pods" > /tmp/code_signing_block.txt
-            echo "  installer.pods_project.targets.each do |target|" >> /tmp/code_signing_block.txt
-            echo "    target.build_configurations.each do |config|" >> /tmp/code_signing_block.txt
-            echo "      config.build_settings['CODE_SIGN_IDENTITY'] = ''" >> /tmp/code_signing_block.txt
-            echo "      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'" >> /tmp/code_signing_block.txt
-            echo "      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'" >> /tmp/code_signing_block.txt
-            echo "      config.build_settings['CODE_SIGN_STYLE'] = 'Manual'" >> /tmp/code_signing_block.txt
-            echo "    end" >> /tmp/code_signing_block.txt
-            echo "  end" >> /tmp/code_signing_block.txt
-            # Find the last 'end' at the start of a line (closing post_install)
+          # Check if post_install hook exists - it should always exist after expo prebuild
+          if ! grep -q "^post_install do" Podfile; then
+            echo "ERROR: post_install hook not found in Podfile!"
+            exit 1
+          fi
+          
+          echo "Found existing post_install hook, adding code signing settings..."
+          # Create temp file with code signing block
+          echo "  # Disable code signing for Pods" > /tmp/code_signing_insert.txt
+          echo "  installer.pods_project.targets.each do |target|" >> /tmp/code_signing_insert.txt
+          echo "    target.build_configurations.each do |config|" >> /tmp/code_signing_insert.txt
+          echo "      config.build_settings['CODE_SIGN_IDENTITY'] = ''" >> /tmp/code_signing_insert.txt
+          echo "      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'" >> /tmp/code_signing_insert.txt
+          echo "      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'" >> /tmp/code_signing_insert.txt
+          echo "      config.build_settings['CODE_SIGN_STYLE'] = 'Manual'" >> /tmp/code_signing_insert.txt
+          echo "    end" >> /tmp/code_signing_insert.txt
+          echo "  end" >> /tmp/code_signing_insert.txt
+          
+          # Find the line with react_native_post_install (always present in expo prebuild)
+          # and insert our code signing block AFTER that line
+          REACT_NATIVE_LINE=$(grep -n "react_native_post_install" Podfile | head -1 | cut -d: -f1)
+          if [ -n "$REACT_NATIVE_LINE" ]; then
+            # Insert temp file content after react_native_post_install line
+            sed -i.bak "${REACT_NATIVE_LINE}r /tmp/code_signing_insert.txt" Podfile
+            rm -f /tmp/code_signing_insert.txt
+          else
+            echo "WARNING: react_native_post_install not found, inserting before last 'end'..."
+            # Fallback: find the last 'end' and insert before it
             LAST_END_LINE=$(grep -n "^end$" Podfile | tail -1 | cut -d: -f1)
             if [ -n "$LAST_END_LINE" ]; then
-              # Insert temp file content before that line using sed
-              sed -i.bak "${LAST_END_LINE}r /tmp/code_signing_block.txt" Podfile
-              rm -f /tmp/code_signing_block.txt
+              sed -i.bak "${LAST_END_LINE}r /tmp/code_signing_insert.txt" Podfile
             fi
-          else
-            echo "No existing post_install hook found, adding new one at the end..."
-            echo "" >> Podfile
-            echo "post_install do |installer|" >> Podfile
-            echo "  installer.pods_project.targets.each do |target|" >> Podfile
-            echo "    target.build_configurations.each do |config|" >> Podfile
-            echo "      config.build_settings['CODE_SIGN_IDENTITY'] = ''" >> Podfile
-            echo "      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'" >> Podfile
-            echo "      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'" >> Podfile
-            echo "      config.build_settings['CODE_SIGN_STYLE'] = 'Manual'" >> Podfile
-            echo "    end" >> Podfile
-            echo "  end" >> Podfile
-            echo "end" >> Podfile
+            rm -f /tmp/code_signing_insert.txt
           fi
           
           echo ""
