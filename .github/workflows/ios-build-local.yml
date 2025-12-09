@@ -21,8 +21,8 @@ jobs:
       - name: 🔍 Verify project structure
         run: |
           echo "Verifying project structure..."
-          ls -la PhysiqeAI/ | head -20
-          if [ -f "PhysiqeAI/package-lock.json" ]; then
+          ls -la | head -20
+          if [ -f "package-lock.json" ]; then
             echo "✅ package-lock.json found"
           else
             echo "❌ package-lock.json not found"
@@ -36,7 +36,6 @@ jobs:
           # Using v3 to avoid auto-caching issues in v4
 
       - name: 🔧 Install dependencies
-        working-directory: ./PhysiqeAI
         run: npm ci
 
       - name: 🚀 Setup Expo CLI
@@ -46,7 +45,6 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: 📱 Prebuild iOS project
-        working-directory: ./PhysiqeAI
         run: |
           echo "Generating native iOS project..."
           npx expo prebuild --platform ios --clean
@@ -55,7 +53,6 @@ jobs:
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
 
       - name: 🔐 Setup Code Signing
-        working-directory: ./PhysiqeAI
         run: |
           echo "Setting up code signing..."
           echo "Note: Code signing will use automatic signing with your Apple Team ID"
@@ -64,7 +61,6 @@ jobs:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
       - name: 📝 Create Export Options
-        working-directory: ./PhysiqeAI
         run: |
           echo "Creating exportOptions.plist..."
           cat > ios/exportOptions.plist << EOF
@@ -97,14 +93,14 @@ jobs:
           echo "Export options created"
 
       - name: 📦 Install CocoaPods dependencies
-        working-directory: ./PhysiqeAI/ios
+        working-directory: ./ios
         run: |
           echo "Installing CocoaPods dependencies..."
           sudo gem install cocoapods
           pod install --repo-update
 
       - name: 🔍 Find Xcode Scheme
-        working-directory: ./PhysiqeAI/ios
+        working-directory: ./ios
         run: |
           echo "Finding Xcode scheme..."
           WORKSPACE=$(find . -name "*.xcworkspace" | head -1)
@@ -128,7 +124,7 @@ jobs:
           echo "Using scheme: $SCHEME"
 
       - name: 🏗️ Build Archive with Xcode
-        working-directory: ./PhysiqeAI/ios
+        working-directory: ./ios
         run: |
           echo "Building iOS archive..."
           
@@ -151,7 +147,7 @@ jobs:
           echo "Archive created successfully"
 
       - name: 📦 Export IPA
-        working-directory: ./PhysiqeAI/ios
+        working-directory: ./ios
         run: |
           echo "Exporting IPA from archive..."
           
@@ -172,7 +168,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios-production-ipa
-          path: PhysiqeAI/ios/build/*.ipa
+          path: ios/build/*.ipa
           retention-days: 30
           if-no-files-found: error
 
