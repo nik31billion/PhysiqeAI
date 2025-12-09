@@ -132,36 +132,80 @@ jobs:
           WORKSPACE=$(find . -name "*.xcworkspace" | head -1)
           echo "Using workspace: $WORKSPACE"
           
-          # Build archive
+          # Create build directory
+          mkdir -p ./build
+          
+          # Build archive with absolute path
+          ARCHIVE_PATH="$(pwd)/build/flex-aura.xcarchive"
+          echo "Archive will be created at: $ARCHIVE_PATH"
+          
           xcodebuild clean archive \
             -workspace "$WORKSPACE" \
             -scheme "${{ env.SCHEME_NAME }}" \
             -configuration Release \
-            -archivePath ./build/flex-aura.xcarchive \
+            -archivePath "$ARCHIVE_PATH" \
             -allowProvisioningUpdates \
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             CODE_SIGN_STYLE="Automatic" \
             | xcpretty || true
           
-          echo "Archive created successfully"
+          # Verify archive exists
+          if [ -d "$ARCHIVE_PATH" ]; then
+            echo "✅ Archive created successfully at: $ARCHIVE_PATH"
+            echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> $GITHUB_ENV
+          else
+            echo "❌ Archive not found at: $ARCHIVE_PATH"
+            echo "Listing build directory:"
+            ls -la ./build/ || echo "Build directory doesn't exist"
+            exit 1
+          fi
 
       - name: 📦 Export IPA
         working-directory: ./ios
         run: |
           echo "Exporting IPA from archive..."
           
+          # Use the archive path from previous step
+          ARCHIVE_PATH="${{ env.ARCHIVE_PATH }}"
+          if [ -z "$ARCHIVE_PATH" ]; then
+            ARCHIVE_PATH="$(pwd)/build/flex-aura.xcarchive"
+          fi
+          
+          echo "Looking for archive at: $ARCHIVE_PATH"
+          
+          # Verify archive exists
+          if [ ! -d "$ARCHIVE_PATH" ]; then
+            echo "❌ Archive not found at: $ARCHIVE_PATH"
+            echo "Current directory: $(pwd)"
+            echo "Listing ios directory:"
+            ls -la
+            echo "Listing build directory (if exists):"
+            ls -la ./build/ 2>/dev/null || echo "Build directory doesn't exist"
+            exit 1
+          fi
+          
+          echo "✅ Archive found, proceeding with export..."
+          
+          EXPORT_PATH="$(pwd)/build"
           xcodebuild -exportArchive \
-            -archivePath ./build/flex-aura.xcarchive \
-            -exportPath ./build \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$EXPORT_PATH" \
             -exportOptionsPlist ./exportOptions.plist \
             -allowProvisioningUpdates
           
           echo "IPA exported successfully"
           
           # Find the IPA file
-          IPA_FILE=$(find ./build -name "*.ipa" | head -1)
-          echo "IPA file: $IPA_FILE"
+          IPA_FILE=$(find "$EXPORT_PATH" -name "*.ipa" | head -1)
+          if [ -z "$IPA_FILE" ]; then
+            echo "❌ IPA file not found in $EXPORT_PATH"
+            echo "Listing export directory:"
+            ls -la "$EXPORT_PATH"
+            exit 1
+          fi
+          
+          echo "✅ IPA file found: $IPA_FILE"
           echo "IPA_PATH=$IPA_FILE" >> $GITHUB_ENV
 
       - name: 📤 Upload IPA artifact
