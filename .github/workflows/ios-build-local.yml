@@ -177,7 +177,8 @@ jobs:
           echo "Archive will be created at: $ARCHIVE_PATH"
           
           # Build for iOS device (not simulator)
-          # Disable code signing for Pods to avoid conflicts
+          # Remove xcpretty to see actual errors
+          set -o pipefail
           xcodebuild clean archive \
             -workspace "$WORKSPACE" \
             -scheme "${{ env.SCHEME_NAME }}" \
@@ -190,28 +191,14 @@ jobs:
             CODE_SIGN_STYLE="Automatic" \
             CODE_SIGNING_REQUIRED=YES \
             CODE_SIGNING_ALLOWED=YES \
-            "CODE_SIGN_IDENTITY[sdk=iphoneos*]=Apple Distribution" \
-            "CODE_SIGN_STYLE[sdk=iphoneos*]=Automatic" \
-            "DEVELOPMENT_TEAM[sdk=iphoneos*]=${{ secrets.APPLE_TEAM_ID }}" \
-            "CODE_SIGN_IDENTITY[sdk=iphoneos*][arch=*]=Apple Distribution" \
-            | xcpretty || xcodebuild clean archive \
-            -workspace "$WORKSPACE" \
-            -scheme "${{ env.SCHEME_NAME }}" \
-            -configuration Release \
-            -destination "generic/platform=iOS" \
-            -archivePath "$ARCHIVE_PATH" \
-            -allowProvisioningUpdates \
-            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            CODE_SIGN_STYLE="Automatic" \
-            CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGNING_ALLOWED=YES
+            2>&1 | tee /tmp/xcodebuild.log
           
-          # Check exit code
-          BUILD_EXIT_CODE=$?
+          BUILD_EXIT_CODE=${PIPESTATUS[0]}
           if [ $BUILD_EXIT_CODE -ne 0 ]; then
             echo "❌ Archive build failed with exit code: $BUILD_EXIT_CODE"
-            echo "Checking for build errors..."
+            echo "=== Searching for actual errors (not warnings) ==="
+            grep -i "error\|failed\|fatal" /tmp/xcodebuild.log | head -20 || echo "No clear errors found, showing last 30 lines:"
+            tail -30 /tmp/xcodebuild.log
             exit $BUILD_EXIT_CODE
           fi
           
