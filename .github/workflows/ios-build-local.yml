@@ -30,10 +30,10 @@ jobs:
           fi
 
       - name: 📦 Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v3
         with:
           node-version: ${{ env.NODE_VERSION }}
-          # Explicitly no cache to avoid path resolution issues
+          # Using v3 to avoid auto-caching issues in v4
 
       - name: 🔧 Install dependencies
         working-directory: ./PhysiqeAI
