@@ -106,7 +106,7 @@ jobs:
           sed -i.bak '/^post_install/,/^end$/d' Podfile
           
           # Add post_install hook to disable code signing for all Pods
-          cat >> Podfile << 'EOF'
+          cat >> Podfile << 'HEREDOC_EOF'
 
 post_install do |installer|
   installer.pods_project.targets.each do |target|
@@ -118,7 +118,7 @@ post_install do |installer|
     end
   end
 end
-EOF
+HEREDOC_EOF
           
           echo "✅ Podfile updated with code signing fix"
           echo "Last 10 lines of Podfile:"
