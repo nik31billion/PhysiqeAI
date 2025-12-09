@@ -97,6 +97,25 @@ jobs:
         run: |
           echo "Installing CocoaPods dependencies..."
           sudo gem install cocoapods
+          
+          # Create/update Podfile post-install hook to disable code signing for Pods
+          if [ -f "Podfile" ]; then
+            # Check if post_install hook already exists
+            if ! grep -q "post_install" Podfile; then
+              echo "" >> Podfile
+              echo "post_install do |installer|" >> Podfile
+              echo "  installer.pods_project.targets.each do |target|" >> Podfile
+              echo "    target.build_configurations.each do |config|" >> Podfile
+              echo "      config.build_settings['CODE_SIGN_IDENTITY'] = ''" >> Podfile
+              echo "      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'" >> Podfile
+              echo "      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'" >> Podfile
+              echo "    end" >> Podfile
+              echo "  end" >> Podfile
+              echo "end" >> Podfile
+              echo "Added post_install hook to Podfile"
+            fi
+          fi
+          
           pod install --repo-update
 
       - name: 🔍 Find Xcode Scheme
@@ -110,26 +129,32 @@ jobs:
           fi
           
           echo "Workspace: $WORKSPACE"
-          echo "Listing all schemes:"
-          xcodebuild -list -workspace "$WORKSPACE" 2>/dev/null || true
           
-          # Get all schemes and filter out test/dependency schemes
-          ALL_SCHEMES=$(xcodebuild -list -workspace "$WORKSPACE" 2>/dev/null | grep -A 20 "Schemes:" | grep -v "Schemes:" | grep -v "^--" | grep -v "^$" | xargs)
-          echo "All schemes found: $ALL_SCHEMES"
-          
-          # Try to find the main app scheme (usually matches app name or slug)
-          # Filter out common dependency/test schemes
-          SCHEME=$(echo "$ALL_SCHEMES" | tr ' ' '\n' | grep -v -i "test" | grep -v -i "auth" | grep -v -i "example" | head -1 | xargs || echo "")
-          
-          # If still empty, try to find scheme matching app name
-          if [ -z "$SCHEME" ] || [ "$SCHEME" = "" ]; then
-            SCHEME=$(echo "$ALL_SCHEMES" | tr ' ' '\n' | grep -i "flex\|aura" | head -1 | xargs || echo "")
+          # Get the actual app project name (not Pods)
+          APP_PROJECT=$(find . -name "*.xcodeproj" -not -path "*/Pods/*" | head -1)
+          if [ -z "$APP_PROJECT" ]; then
+            echo "Error: No app project found"
+            exit 1
           fi
           
-          # Final fallback: use first scheme or default
+          echo "App project: $APP_PROJECT"
+          
+          # List schemes from the app project (not workspace, to avoid Pods schemes)
+          ALL_SCHEMES=$(xcodebuild -list -project "$APP_PROJECT" 2>/dev/null | grep -A 20 "Schemes:" | grep -v "Schemes:" | grep -v "^--" | grep -v "^$" | xargs)
+          echo "App schemes: $ALL_SCHEMES"
+          
+          # Try to find scheme matching app name
+          SCHEME=$(echo "$ALL_SCHEMES" | tr ' ' '\n' | grep -i "flex\|aura" | head -1 | xargs || echo "")
+          
+          # If not found, use first scheme from app project
           if [ -z "$SCHEME" ] || [ "$SCHEME" = "" ]; then
-            SCHEME=$(echo "$ALL_SCHEMES" | tr ' ' '\n' | head -1 | xargs || echo "flex-aura")
-            echo "Using first available scheme: $SCHEME"
+            SCHEME=$(echo "$ALL_SCHEMES" | tr ' ' '\n' | head -1 | xargs || echo "")
+          fi
+          
+          # Final fallback
+          if [ -z "$SCHEME" ] || [ "$SCHEME" = "" ]; then
+            SCHEME="FlexAura"
+            echo "Using default scheme: $SCHEME"
           fi
           
           echo "✅ Selected scheme: $SCHEME"
@@ -152,7 +177,24 @@ jobs:
           echo "Archive will be created at: $ARCHIVE_PATH"
           
           # Build for iOS device (not simulator)
+          # Disable code signing for Pods to avoid conflicts
           xcodebuild clean archive \
+            -workspace "$WORKSPACE" \
+            -scheme "${{ env.SCHEME_NAME }}" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$ARCHIVE_PATH" \
+            -allowProvisioningUpdates \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            CODE_SIGN_STYLE="Automatic" \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGNING_ALLOWED=YES \
+            "CODE_SIGN_IDENTITY[sdk=iphoneos*]=Apple Distribution" \
+            "CODE_SIGN_STYLE[sdk=iphoneos*]=Automatic" \
+            "DEVELOPMENT_TEAM[sdk=iphoneos*]=${{ secrets.APPLE_TEAM_ID }}" \
+            "CODE_SIGN_IDENTITY[sdk=iphoneos*][arch=*]=Apple Distribution" \
+            | xcpretty || xcodebuild clean archive \
             -workspace "$WORKSPACE" \
             -scheme "${{ env.SCHEME_NAME }}" \
             -configuration Release \
