@@ -1,7 +1,7 @@
 name: iOS Production Build (Local - No EAS Credits)
 
 on:
-  workflow_dispatch:  # Manual trigger only
+  workflow_dispatch: {}  # Manual trigger only
 
 env:
   NODE_VERSION: '20'
