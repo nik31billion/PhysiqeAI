@@ -109,19 +109,31 @@ jobs:
             exit 1
           fi
           
-          # Try to get scheme from xcodebuild
-          SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" 2>/dev/null | grep -A 10 "Schemes:" | grep -v "Schemes:" | head -1 | xargs || echo "")
+          echo "Workspace: $WORKSPACE"
+          echo "Listing all schemes:"
+          xcodebuild -list -workspace "$WORKSPACE" 2>/dev/null || true
           
-          # Fallback: use app slug from app.json
+          # Get all schemes and filter out test/dependency schemes
+          ALL_SCHEMES=$(xcodebuild -list -workspace "$WORKSPACE" 2>/dev/null | grep -A 20 "Schemes:" | grep -v "Schemes:" | grep -v "^--" | grep -v "^$" | xargs)
+          echo "All schemes found: $ALL_SCHEMES"
+          
+          # Try to find the main app scheme (usually matches app name or slug)
+          # Filter out common dependency/test schemes
+          SCHEME=$(echo "$ALL_SCHEMES" | tr ' ' '\n' | grep -v -i "test" | grep -v -i "auth" | grep -v -i "example" | head -1 | xargs || echo "")
+          
+          # If still empty, try to find scheme matching app name
           if [ -z "$SCHEME" ] || [ "$SCHEME" = "" ]; then
-            SCHEME="flex-aura"
-            echo "Using default scheme: $SCHEME"
-          else
-            echo "Found scheme: $SCHEME"
+            SCHEME=$(echo "$ALL_SCHEMES" | tr ' ' '\n' | grep -i "flex\|aura" | head -1 | xargs || echo "")
           fi
           
+          # Final fallback: use first scheme or default
+          if [ -z "$SCHEME" ] || [ "$SCHEME" = "" ]; then
+            SCHEME=$(echo "$ALL_SCHEMES" | tr ' ' '\n' | head -1 | xargs || echo "flex-aura")
+            echo "Using first available scheme: $SCHEME"
+          fi
+          
+          echo "✅ Selected scheme: $SCHEME"
           echo "SCHEME_NAME=$SCHEME" >> $GITHUB_ENV
-          echo "Using scheme: $SCHEME"
 
       - name: 🏗️ Build Archive with Xcode
         working-directory: ./ios
@@ -139,16 +151,27 @@ jobs:
           ARCHIVE_PATH="$(pwd)/build/flex-aura.xcarchive"
           echo "Archive will be created at: $ARCHIVE_PATH"
           
+          # Build for iOS device (not simulator)
           xcodebuild clean archive \
             -workspace "$WORKSPACE" \
             -scheme "${{ env.SCHEME_NAME }}" \
             -configuration Release \
+            -destination "generic/platform=iOS" \
             -archivePath "$ARCHIVE_PATH" \
             -allowProvisioningUpdates \
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
             CODE_SIGN_IDENTITY="Apple Distribution" \
             CODE_SIGN_STYLE="Automatic" \
-            | xcpretty || true
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGNING_ALLOWED=YES
+          
+          # Check exit code
+          BUILD_EXIT_CODE=$?
+          if [ $BUILD_EXIT_CODE -ne 0 ]; then
+            echo "❌ Archive build failed with exit code: $BUILD_EXIT_CODE"
+            echo "Checking for build errors..."
+            exit $BUILD_EXIT_CODE
+          fi
           
           # Verify archive exists
           if [ -d "$ARCHIVE_PATH" ]; then
