@@ -15,12 +15,25 @@ jobs:
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history
+
+      - name: 🔍 Verify project structure
+        run: |
+          echo "Verifying project structure..."
+          ls -la PhysiqeAI/ | head -20
+          if [ -f "PhysiqeAI/package-lock.json" ]; then
+            echo "✅ package-lock.json found"
+          else
+            echo "❌ package-lock.json not found"
+            exit 1
+          fi
 
       - name: 📦 Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          # Cache is optional - removed to avoid path resolution issues
+          # Explicitly no cache to avoid path resolution issues
 
       - name: 🔧 Install dependencies
         working-directory: ./PhysiqeAI
