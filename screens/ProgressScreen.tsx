@@ -17,6 +17,8 @@ import { useAuth } from '../utils/AuthContext';
 import { supabase } from '../utils/supabase';
 import { useInstantCompletionStats, useInstantAuraSummary, useInstantUserProfile } from '../utils/useInstantData';
 import { useAura } from '../utils/useAura';
+import { useAuraStore } from '../utils/stores';
+import { useInitializeStores } from '../utils/hooks/useInitializeStores';
 import { getUserDisplayName } from '../utils/profileService';
 import AuraMeter from '../components/AuraMeter';
 import StreakTracker from '../components/StreakTracker';
@@ -61,8 +63,25 @@ const ProgressScreen: React.FC = () => {
   // Use instant completion stats - zero delays, instant updates!
   const { stats, loading } = useInstantCompletionStats(user?.id || null);
   
-  // Use instant aura data for truly instant updates
-  const { auraSummary: instantAuraSummary, loading: instantAuraLoading } = useInstantAuraSummary(user?.id || null);
+  // Use Zustand store for instant aura updates (same as PlanScreen)
+  const auraSummary = useAuraStore((state) => state.auraSummary);
+  const loadAuraFromCache = useAuraStore((state) => state.loadFromCache);
+  const syncAuraWithDB = useAuraStore((state) => state.syncWithDatabase);
+  
+  // Initialize stores on mount
+  useInitializeStores(user?.id || null, null);
+  
+  // Load aura from cache immediately when user is available
+  useEffect(() => {
+    if (user?.id) {
+      loadAuraFromCache(user.id).then(() => {
+        // Sync with DB in background
+        syncAuraWithDB(user.id).catch(() => {
+          // Silently handle errors
+        });
+      });
+    }
+  }, [user?.id]);
   
   // Use instant user profile for progress comparison
   const { profile: userProfile, loading: profileLoading } = useInstantUserProfile(user?.id || null);
@@ -86,12 +105,12 @@ const ProgressScreen: React.FC = () => {
     }
   }, [user?.id, refreshAura]);
   
-  // Use instant data when available, fallback to regular aura system
-  const totalAura = instantAuraSummary?.total_aura || fallbackTotalAura || 0;
-  const currentStreak = instantAuraSummary?.current_streak || fallbackCurrentStreak || 0;
-  const bestStreak = instantAuraSummary?.best_streak || fallbackBestStreak || 0;
-  const auraLevel = instantAuraSummary?.total_aura ? 
-    getAuraLevel(instantAuraSummary.total_aura) : 
+  // Use Zustand store data (primary source), fallback to instant hook, then regular aura system
+  const totalAura = auraSummary?.total_aura || fallbackTotalAura || 0;
+  const currentStreak = auraSummary?.current_streak || fallbackCurrentStreak || 0;
+  const bestStreak = auraSummary?.best_streak || fallbackBestStreak || 0;
+  const auraLevel = auraSummary?.total_aura ? 
+    getAuraLevel(auraSummary.total_aura) : 
     fallbackAuraLevel;
 
   // Animation states
@@ -169,8 +188,8 @@ const ProgressScreen: React.FC = () => {
 
           {/* Aura Meter Section */}
           <AuraMeter 
-            auraSummary={instantAuraSummary}
-            loading={instantAuraLoading}
+            auraSummary={auraSummary}
+            loading={false}
             showAnimation={showAuraAnimation}
             onAnimationComplete={handleAuraAnimationComplete}
           />
@@ -280,7 +299,7 @@ const ProgressScreen: React.FC = () => {
       <SocialShareModal
         visible={showSocialShareModal}
         onClose={() => setShowSocialShareModal(false)}
-        auraSummary={instantAuraSummary}
+        auraSummary={auraSummary}
         userName={getUserDisplayName(userProfile)}
         userId={user?.id}
         onShareSuccess={handleSocialShareSuccess}

@@ -18,7 +18,7 @@
 ### Issue 3: Plan Table Not Refreshing After Completion
 **Problem**: New plans weren't showing in the UI after regeneration completed.
 **Root Cause**: Data refresh was happening before backend generation actually finished.
-**Fix**: Complete rewrite of completion handler with proper data fetching and state updates.
+**Fix**: Complete rewrite of completih proper data fetching and state updates.
 
 ## Key Technical Fixes Made
 

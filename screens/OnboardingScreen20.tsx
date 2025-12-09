@@ -53,6 +53,7 @@ const OnboardingScreen20: React.FC = () => {
 
   // Native-driven progress animation
   const progressAnimation = useRef(new Animated.Value(5)).current;
+  const lastProgressValue = useRef(5);
   const animationRef = useRef<number | null>(null);
   const progressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const appStateRef = useRef(AppState.currentState);
@@ -77,8 +78,20 @@ const OnboardingScreen20: React.FC = () => {
       }
     });
     
-    // Use native-driven animation for progress bar with immediate start
-    progressAnimation.setValue(progress);
+    // Update progress bar - animate smoothly to new value
+    if (progress >= 100 || Math.abs(progress - lastProgressValue.current) >= 5) {
+      // Animate for significant changes or when reaching 100%
+      Animated.timing(progressAnimation, {
+        toValue: progress,
+        duration: 300,
+        useNativeDriver: false,
+      }).start();
+      lastProgressValue.current = progress;
+    } else {
+      // Use setValue for small incremental updates (better performance)
+      progressAnimation.setValue(progress);
+      lastProgressValue.current = progress;
+    }
     
     // Update stage and messages with animation
     if (stageIndex !== progressStage) {
@@ -247,19 +260,30 @@ const OnboardingScreen20: React.FC = () => {
       if (status === 'completed') {
         console.log('Plan generation completed!');
         
-        // CRITICAL FIX: Don't jump to 100% immediately
-        // Let the progress timer continue naturally until it reaches 100%
-        // This prevents the jarring jump from 97% to 100%
+        // CRITICAL FIX: Animate progress bar to 100% immediately when completed
+        setEstimatedProgress(100);
+        lastProgressValue.current = 100;
         
-        // Clear status check interval but keep progress timer running
+        // Animate progress bar to 100% smoothly
+        Animated.timing(progressAnimation, {
+          toValue: 100,
+          duration: 500,
+          useNativeDriver: false,
+        }).start();
+        
+        // Clear status check interval
         if (statusCheckInterval) {
           clearInterval(statusCheckInterval);
           setStatusCheckInterval(null);
         }
         
-        // DON'T clear the progress timer - let it continue to 100% naturally
-        // The progress timer will handle the smooth transition to 100%
-        console.log('[Onboarding] Backend completed, but letting progress timer finish naturally');
+        // Clear progress timer since we're done
+        if (progressTimerRef.current) {
+          clearTimeout(progressTimerRef.current);
+          progressTimerRef.current = null;
+        }
+        
+        console.log('[Onboarding] Backend completed, animating progress bar to 100%');
         
       } else if (status === 'failed') {
         console.log('Plan generation failed');
@@ -517,11 +541,11 @@ const OnboardingScreen20: React.FC = () => {
         setProgressUpdateInterval(newProgressInterval);
       
       try {
-        // Import the plan generation function
-        const { generatePlanViaEdgeFunction } = await import('../utils/planService');
+        // Import the concurrent plan generation function (uses worker queue)
+        const { generatePlanConcurrently } = await import('../utils/planService');
         
-        // Retry plan generation with regenerate flag
-        const response = await generatePlanViaEdgeFunction({
+        // Retry plan generation with regenerate flag (now goes through worker queue)
+        const response = await generatePlanConcurrently({
           userId: user!.id,
           regenerate: true // Force regeneration
         });

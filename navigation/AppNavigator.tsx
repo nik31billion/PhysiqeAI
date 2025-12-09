@@ -1,5 +1,5 @@
-import React from 'react';
-import { NavigationContainer, useNavigation } from '@react-navigation/native';
+import React, { useRef } from 'react';
+import { NavigationContainer, useNavigation, NavigationState } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
@@ -7,12 +7,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../utils/AuthContext';
 import { useOnboarding } from '../utils/OnboardingContext';
 import { loadUserData } from '../utils/instantDataManager';
+import { logScreenView } from '../utils/analyticsService';
+import { addBreadcrumb } from '../utils/sentryConfig';
 import { HomeScreen, PlanScreen, ProgressScreen, ProfileScreen, EditPlanScreen, OnboardingScreen1, OnboardingScreen2, OnboardingScreen4, OnboardingScreen5, OnboardingScreen6, OnboardingScreen7, OnboardingScreen8, OnboardingScreen9, OnboardingScreen10, OnboardingScreen11, OnboardingScreen12, OnboardingScreen13, OnboardingScreen14, OnboardingScreen15, OnboardingScreen16, OnboardingScreen17, OnboardingScreen18, SignUpScreen, LoginScreen, SettingsScreen, AboutCoachGlowScreen, PrivacyPolicyScreen, TermsAndConditionsScreen, SubscriptionScreen } from '../screens';
 import FoodScannerScreen from '../screens/FoodScannerScreen';
 import FloatingCameraButton from '../components/FloatingCameraButton';
 import OnboardingScreen19 from '../screens/OnboardingScreen19';
 import OnboardingScreen20 from '../screens/OnboardingScreen20';
-import OnboardingScreen21 from '../screens/OnboardingScreen21';
+// PAYMENT SCREEN DISABLED - Skip directly from Screen 20 to Screen 22
+// import OnboardingScreen21 from '../screens/OnboardingScreen21';
 import OnboardingScreen22 from '../screens/OnboardingScreen22';
 
 const Tab = createBottomTabNavigator();
@@ -128,6 +131,10 @@ const MainTabs: React.FC = () => {
 const AppNavigator: React.FC = () => {
   const { user, loading: authLoading } = useAuth();
   const { isOnboardingComplete, loading: onboardingLoading, currentStep } = useOnboarding();
+  
+  // Track screen views - MUST be before any early returns
+  const routeNameRef = useRef<string>();
+  const navigationRef = useRef<any>();
 
   // Load user data for instant access when authenticated and onboarding is complete
   React.useEffect(() => {
@@ -162,8 +169,40 @@ const AppNavigator: React.FC = () => {
     return "OnboardingScreen1";
   };
 
+  const onNavigationStateChange = (state: NavigationState | undefined) => {
+    if (!state) return;
+
+    const getCurrentRouteName = (state: NavigationState): string => {
+      const route = state.routes[state.index];
+      if (route.state) {
+        return getCurrentRouteName(route.state as NavigationState);
+      }
+      return route.name;
+    };
+
+    const previousRouteName = routeNameRef.current;
+    const currentRouteName = getCurrentRouteName(state);
+
+    if (previousRouteName !== currentRouteName) {
+      // Track screen view - fire and forget (no await)
+      logScreenView(currentRouteName);
+      
+      // Add Sentry breadcrumb for navigation
+      addBreadcrumb('Screen navigation', 'navigation', {
+        from: previousRouteName || 'initial',
+        to: currentRouteName,
+      });
+    }
+
+    // Save the current route name for next time
+    routeNameRef.current = currentRouteName;
+  };
+
   return (
-    <NavigationContainer>
+    <NavigationContainer
+      ref={navigationRef}
+      onStateChange={onNavigationStateChange}
+    >
       <Stack.Navigator
         initialRouteName={getInitialRoute()}
         screenOptions={{
@@ -211,7 +250,8 @@ const AppNavigator: React.FC = () => {
             <Stack.Screen name="OnboardingScreen18" component={OnboardingScreen18} />
             <Stack.Screen name="OnboardingScreen19" component={OnboardingScreen19} />
             <Stack.Screen name="OnboardingScreen20" component={OnboardingScreen20} />
-            <Stack.Screen name="OnboardingScreen21" component={OnboardingScreen21} />
+            {/* PAYMENT SCREEN DISABLED - Skipping Screen 21 */}
+            {/* <Stack.Screen name="OnboardingScreen21" component={OnboardingScreen21} /> */}
             <Stack.Screen name="OnboardingScreen22" component={OnboardingScreen22} />
             <Stack.Screen name="MainTabs" component={MainTabs} />
             <Stack.Screen name="EditPlanScreen" component={EditPlanScreen} />

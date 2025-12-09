@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { invalidateCacheForOnboarding } from './universalCacheInvalidation';
 import { User } from '@supabase/supabase-js';
+import { captureException, addBreadcrumb } from './sentryConfig';
 
 export interface OnboardingData {
   // Basic Information
@@ -38,7 +39,6 @@ export interface OnboardingData {
   privacy_settings?: any;
   additional_notes?: string;
   selected_plan?: string;
-  coupon_code?: string;
   
   // Profile Picture
   profile_picture?: string;
@@ -78,14 +78,33 @@ export class OnboardingService {
    */
   static async getUserProfile(userId: string): Promise<{ data: UserProfile | null; error: any }> {
     try {
+      addBreadcrumb('Fetching user profile', 'onboarding', { userId });
       const { data, error } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('id', userId)
         .maybeSingle(); // Use maybeSingle() instead of single() to handle no rows gracefully
 
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found, which is OK
+        captureException(new Error(`Failed to get user profile: ${error.message}`), {
+          onboarding: {
+            operation: 'getUserProfile',
+            userId,
+            errorCode: error.code,
+            errorMessage: error.message,
+          },
+        });
+      }
+
       return { data, error };
     } catch (error) {
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        onboarding: {
+          operation: 'getUserProfile',
+          userId,
+          errorType: 'exception',
+        },
+      });
       return { data: null, error };
     }
   }
@@ -98,6 +117,11 @@ export class OnboardingService {
     updates: Partial<OnboardingData>
   ): Promise<{ data: UserProfile | null; error: any }> {
     try {
+      addBreadcrumb('Updating user profile', 'onboarding', { 
+        userId, 
+        updateFields: Object.keys(updates),
+      });
+      
       const { data, error } = await supabase
         .from('user_profiles')
         .update({
@@ -108,6 +132,18 @@ export class OnboardingService {
         .select()
         .single();
 
+      if (error) {
+        captureException(new Error(`Failed to update user profile: ${error.message}`), {
+          onboarding: {
+            operation: 'updateUserProfile',
+            userId,
+            errorCode: error.code,
+            errorMessage: error.message,
+            updateFields: Object.keys(updates),
+          },
+        });
+      }
+
       // Invalidate cache after successful profile update
       if (!error && data) {
         invalidateCacheForOnboarding(userId, 0); // 0 indicates general profile update
@@ -115,6 +151,13 @@ export class OnboardingService {
 
       return { data, error };
     } catch (error) {
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        onboarding: {
+          operation: 'updateUserProfile',
+          userId,
+          errorType: 'exception',
+        },
+      });
       return { data: null, error };
     }
   }

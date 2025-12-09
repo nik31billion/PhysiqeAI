@@ -170,7 +170,7 @@ const OnboardingScreen12: React.FC = () => {
 
           {/* Timeline Selector */}
           <View style={styles.timelineContainer}>
-            <Text style={styles.timelineHeading}>How fast you you want to achieve it?</Text>
+            <Text style={styles.timelineHeading}>How fast do you want to achieve it?</Text>
             
             <View style={styles.timelineOptions}>
               {timelineOptions.map((option) => (

@@ -125,8 +125,11 @@ const TermsAndConditionsScreen: React.FC = () => {
                 <View style={styles.planHeader}>
                   <Ionicons name="calendar-outline" size={20} color="#937AFD" />
                   <Text style={styles.planName}>Yearly Plan</Text>
+                  <View style={styles.freeTrialBadge}>
+                    <Text style={styles.freeTrialText}>7-Day Free Trial</Text>
+                  </View>
                 </View>
-                <Text style={styles.planPrice}>₹2500 / ~USD 30</Text>
+                <Text style={styles.planPrice}>Free for 7 days, then ₹2000/year</Text>
               </View>
             </View>
 
@@ -371,6 +374,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#937AFD',
+  },
+  freeTrialBadge: {
+    backgroundColor: '#FF6B35',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 8,
+  },
+  freeTrialText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: '600',
   },
   refundCard: {
     flexDirection: 'row',

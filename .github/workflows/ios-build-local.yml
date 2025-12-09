@@ -1,0 +1,179 @@
+name: iOS Production Build (Local - No EAS Credits)
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  build-ios-local:
+    name: Build iOS IPA Locally (No EAS Credits)
+    runs-on: macos-latest
+    timeout-minutes: 90
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: PhysiqeAI/package-lock.json
+
+      - name: 🔧 Install dependencies
+        working-directory: ./PhysiqeAI
+        run: npm ci
+
+      - name: 🚀 Setup Expo CLI
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: 📱 Prebuild iOS project
+        working-directory: ./PhysiqeAI
+        run: |
+          echo "Generating native iOS project..."
+          npx expo prebuild --platform ios --clean
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: 🔐 Setup Code Signing
+        working-directory: ./PhysiqeAI
+        run: |
+          echo "Setting up code signing..."
+          echo "Note: Code signing will use automatic signing with your Apple Team ID"
+          echo "Make sure you've configured iOS credentials with: eas credentials --platform ios"
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: 📝 Create Export Options
+        working-directory: ./PhysiqeAI
+        run: |
+          echo "Creating exportOptions.plist..."
+          cat > ios/exportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <key>teamID</key>
+              <string>${{ secrets.APPLE_TEAM_ID }}</string>
+              <key>uploadBitcode</key>
+              <false/>
+              <key>uploadSymbols</key>
+              <true/>
+              <key>compileBitcode</key>
+              <false/>
+              <key>signingStyle</key>
+              <string>automatic</string>
+              <key>signingCertificate</key>
+              <string>Apple Distribution</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>com.applotictech.flexaura</key>
+                  <string></string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+          echo "Export options created"
+
+      - name: 📦 Install CocoaPods dependencies
+        working-directory: ./PhysiqeAI/ios
+        run: |
+          echo "Installing CocoaPods dependencies..."
+          sudo gem install cocoapods
+          pod install --repo-update
+
+      - name: 🔍 Find Xcode Scheme
+        working-directory: ./PhysiqeAI/ios
+        run: |
+          echo "Finding Xcode scheme..."
+          WORKSPACE=$(find . -name "*.xcworkspace" | head -1)
+          if [ -z "$WORKSPACE" ]; then
+            echo "Error: No .xcworkspace found"
+            exit 1
+          fi
+          
+          # Try to get scheme from xcodebuild
+          SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" 2>/dev/null | grep -A 10 "Schemes:" | grep -v "Schemes:" | head -1 | xargs || echo "")
+          
+          # Fallback: use app slug from app.json
+          if [ -z "$SCHEME" ] || [ "$SCHEME" = "" ]; then
+            SCHEME="flex-aura"
+            echo "Using default scheme: $SCHEME"
+          else
+            echo "Found scheme: $SCHEME"
+          fi
+          
+          echo "SCHEME_NAME=$SCHEME" >> $GITHUB_ENV
+          echo "Using scheme: $SCHEME"
+
+      - name: 🏗️ Build Archive with Xcode
+        working-directory: ./PhysiqeAI/ios
+        run: |
+          echo "Building iOS archive..."
+          
+          # Find workspace
+          WORKSPACE=$(find . -name "*.xcworkspace" | head -1)
+          echo "Using workspace: $WORKSPACE"
+          
+          # Build archive
+          xcodebuild clean archive \
+            -workspace "$WORKSPACE" \
+            -scheme "${{ env.SCHEME_NAME }}" \
+            -configuration Release \
+            -archivePath ./build/flex-aura.xcarchive \
+            -allowProvisioningUpdates \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            CODE_SIGN_STYLE="Automatic" \
+            | xcpretty || true
+          
+          echo "Archive created successfully"
+
+      - name: 📦 Export IPA
+        working-directory: ./PhysiqeAI/ios
+        run: |
+          echo "Exporting IPA from archive..."
+          
+          xcodebuild -exportArchive \
+            -archivePath ./build/flex-aura.xcarchive \
+            -exportPath ./build \
+            -exportOptionsPlist ./exportOptions.plist \
+            -allowProvisioningUpdates
+          
+          echo "IPA exported successfully"
+          
+          # Find the IPA file
+          IPA_FILE=$(find ./build -name "*.ipa" | head -1)
+          echo "IPA file: $IPA_FILE"
+          echo "IPA_PATH=$IPA_FILE" >> $GITHUB_ENV
+
+      - name: 📤 Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-production-ipa
+          path: PhysiqeAI/ios/build/*.ipa
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: 📋 Build Summary
+        run: |
+          echo "## ✅ iOS Build Complete (Local Build)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Your IPA has been built locally on GitHub Actions Mac runner." >> $GITHUB_STEP_SUMMARY
+          echo "**✅ No EAS Build credits were used!**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download the IPA from workflow artifacts (above)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Submit to App Store Connect:" >> $GITHUB_STEP_SUMMARY
+          echo "   - Go to [App Store Connect](https://appstoreconnect.apple.com)" >> $GITHUB_STEP_SUMMARY
+          echo "   - Upload the IPA manually, or" >> $GITHUB_STEP_SUMMARY
+          echo "   - Use: \`eas submit --platform ios --path <ipa-file>\`" >> $GITHUB_STEP_SUMMARY

@@ -10,7 +10,9 @@ import {
   ActivityIndicator,
   Modal,
   Dimensions,
-  Image
+  Image,
+  KeyboardAvoidingView,
+  Platform
 } from 'react-native'
 import { useCoachGlow, useCoachGlowMotivation, useCoachGlowPlanSwaps } from '../utils'
 import { useAuth } from '../utils'
@@ -250,7 +252,11 @@ export default function CoachGlowChat({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerContent}>
@@ -282,6 +288,8 @@ export default function CoachGlowChat({
           style={styles.messagesContainer}
           contentContainerStyle={styles.messagesContent}
           onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
         >
           {messages.length === 0 && (
             <View style={styles.welcomeContainer}>
@@ -307,6 +315,8 @@ export default function CoachGlowChat({
             multiline
             maxLength={500}
             editable={!coach.isLoading}
+            returnKeyType="default"
+            blurOnSubmit={false}
           />
           <TouchableOpacity
             style={[
@@ -340,7 +350,7 @@ export default function CoachGlowChat({
             Disclaimer: Coach Glow is an AI-powered fitness companion that provides general wellness, motivational, and educational content. It is not a medical device and does not offer medical, nutritional, or therapeutic advice. For personalized medical or dietary guidance, please consult a certified health professional.
           </Text>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   )
 }
@@ -425,7 +435,8 @@ const styles = StyleSheet.create({
     flex: 1
   },
   messagesContent: {
-    padding: 16
+    padding: 16,
+    paddingBottom: 20
   },
   welcomeContainer: {
     alignItems: 'center',

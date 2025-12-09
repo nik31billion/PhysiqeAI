@@ -212,7 +212,8 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
                 <Text style={styles.noSubscriptionText}>
                   You don't have an active premium subscription. Upgrade to unlock all premium features!
                 </Text>
-                <TouchableOpacity style={styles.upgradeButton}>
+                {/* TODO: Re-enable when subscription functionality is ready */}
+                {/* <TouchableOpacity style={styles.upgradeButton}>
                   <LinearGradient
                     colors={['#937AFD', '#b99bce']}
                     style={styles.upgradeButtonGradient}
@@ -220,7 +221,7 @@ export const SubscriptionManagementModal: React.FC<SubscriptionManagementModalPr
                     <Text style={styles.upgradeButtonText}>Upgrade to Premium</Text>
                     <Ionicons name="arrow-forward" size={20} color="white" />
                   </LinearGradient>
-                </TouchableOpacity>
+                </TouchableOpacity> */}
               </View>
             ) : subscriptionDetails ? (
               // Active subscription details

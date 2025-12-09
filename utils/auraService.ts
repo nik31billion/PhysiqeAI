@@ -4,6 +4,7 @@
  */
 
 import { supabase } from './supabase';
+import { captureException, addBreadcrumb } from './sentryConfig';
 
 // Types and Interfaces
 export interface AuraEvent {
@@ -74,6 +75,7 @@ export const AURA_EVENT_TYPES = {
   EXERCISE_COMPLETION: 'exercise_completion',
   MEAL_COMPLETION: 'meal_completion',
   ALL_MEALS_DAY: 'all_meals_day',
+  ALL_EXERCISES_DAY: 'all_exercises_day',
   SEVEN_DAY_STREAK: 'seven_day_streak',
   NEW_BEST_STREAK: 'new_best_streak',
   DAILY_CHECKIN: 'daily_checkin',
@@ -105,7 +107,8 @@ export const AURA_POINTS = {
   DAILY_WORKOUT: 10,
   EXERCISE_COMPLETION: 10,
   MEAL_COMPLETION: 3,
-  ALL_MEALS_BONUS: 10,
+  ALL_MEALS_BONUS: 5, // Changed from 10 to 5 as per user requirement
+  ALL_EXERCISES_BONUS: 5, // Bonus for completing all exercises for the day
   SEVEN_DAY_STREAK_BONUS: 30,
   NEW_BEST_STREAK: 20,
   DAILY_CHECKIN: 1,
@@ -135,6 +138,7 @@ export const DAILY_LIMITS = {
  */
 export async function getUserAuraSummary(userId: string): Promise<UserAuraSummary | null> {
   try {
+    addBreadcrumb('Fetching user aura summary', 'aura', { userId });
     const { data, error } = await supabase
       .from('user_aura_summary')
       .select('*')
@@ -142,6 +146,16 @@ export async function getUserAuraSummary(userId: string): Promise<UserAuraSummar
       .maybeSingle(); // Use maybeSingle() instead of single()
 
     if (error) {
+      if (error.code !== 'PGRST116') { // PGRST116 = no rows found, which is OK
+        captureException(new Error(`Failed to get user aura summary: ${error.message}`), {
+          aura: {
+            operation: 'getUserAuraSummary',
+            userId,
+            errorCode: error.code,
+            errorMessage: error.message,
+          },
+        });
+      }
       return null;
     }
 
@@ -163,6 +177,15 @@ export async function getUserAuraSummary(userId: string): Promise<UserAuraSummar
         .single();
 
       if (createError) {
+        captureException(new Error(`Failed to create user aura summary: ${createError.message}`), {
+          aura: {
+            operation: 'getUserAuraSummary',
+            userId,
+            subOperation: 'create',
+            errorCode: createError.code,
+            errorMessage: createError.message,
+          },
+        });
         return null;
       }
 
@@ -171,6 +194,13 @@ export async function getUserAuraSummary(userId: string): Promise<UserAuraSummar
 
     return data;
   } catch (error) {
+    captureException(error instanceof Error ? error : new Error(String(error)), {
+      aura: {
+        operation: 'getUserAuraSummary',
+        userId,
+        errorType: 'exception',
+      },
+    });
     return null;
   }
 }
@@ -183,19 +213,55 @@ export async function addAuraPoints(
   eventType: string,
   auraDelta: number,
   eventDescription?: string,
-  metadata?: any
+  metadata?: any,
+  skipStoreUpdate: boolean = false // Flag to skip store update if already done optimistically
 ): Promise<{ success: boolean; newTotal?: number; error?: string }> {
   try {
+    // Optimistic update: Add to store immediately (unless already done)
+    if (!skipStoreUpdate) {
+      try {
+        const { useAuraStore } = await import('./stores/auraStore');
+        const store = useAuraStore.getState();
+        // Pass userId to persist immediately
+        await store.addAuraPoints(auraDelta, userId);
+      } catch (storeError) {
+        // Silently fail if store not available - backward compatibility
+        console.log('Store update skipped:', storeError);
+      }
+    }
+    
     // First, ensure user has an Aura summary
     const currentSummary = await getUserAuraSummary(userId);
     if (!currentSummary) {
       return { success: false, error: 'Failed to get or create user Aura summary' };
     }
 
-    const currentAura = currentSummary.total_aura;
-    const newAura = Math.max(0, currentAura + auraDelta);
+    // Use store value if available (more up-to-date), otherwise use DB value
+    let currentAura = currentSummary.total_aura;
+    let storeAura = null;
+    try {
+      const { useAuraStore } = await import('./stores/auraStore');
+      const store = useAuraStore.getState();
+      if (store.auraSummary) {
+        storeAura = store.auraSummary.total_aura;
+        // If store has more recent data (optimistic update), use that as base
+        if (storeAura > currentAura) {
+          currentAura = storeAura;
+        }
+      }
+    } catch (e) {
+      // Use DB value if store not available
+    }
+    
+    // Calculate new aura value
+    // If skipStoreUpdate is true, the store already has the points added optimistically
+    // So we should use the store value directly, otherwise add the delta
+    const newAura = skipStoreUpdate && storeAura !== null
+      ? storeAura // Store already has the optimistic update
+      : Math.max(0, currentAura + auraDelta);
 
     // Insert the Aura event
+    addBreadcrumb('Adding aura points', 'aura', { userId, eventType, auraDelta });
     const { error: eventError } = await supabase
       .from('aura_events')
       .insert({
@@ -208,6 +274,16 @@ export async function addAuraPoints(
       });
 
     if (eventError) {
+      captureException(new Error(`Failed to insert aura event: ${eventError.message}`), {
+        aura: {
+          operation: 'addAuraPoints',
+          userId,
+          eventType,
+          auraDelta,
+          errorCode: eventError.code,
+          errorMessage: eventError.message,
+        },
+      });
       return { success: false, error: eventError.message };
     }
 
@@ -221,11 +297,31 @@ export async function addAuraPoints(
       .eq('user_id', userId);
 
     if (updateError) {
+      captureException(new Error(`Failed to update aura summary: ${updateError.message}`), {
+        aura: {
+          operation: 'addAuraPoints',
+          userId,
+          eventType,
+          auraDelta,
+          subOperation: 'update',
+          errorCode: updateError.code,
+          errorMessage: updateError.message,
+        },
+      });
       return { success: false, error: updateError.message };
     }
 
     return { success: true, newTotal: newAura };
   } catch (error) {
+    captureException(error instanceof Error ? error : new Error(String(error)), {
+      aura: {
+        operation: 'addAuraPoints',
+        userId,
+        eventType,
+        auraDelta,
+        errorType: 'exception',
+      },
+    });
     return { success: false, error: 'Failed to add aura points' };
   }
 }
@@ -326,10 +422,16 @@ export async function checkAchievements(userId: string): Promise<{ success: bool
       // Check achievement requirements
       switch (achievement.id) {
         case 'first_day':
-          shouldUnlock = summary.total_days_completed >= 1;
+          // Check if user has completed at least one day
+          const { data: dayCompletions } = await supabase
+            .from('day_completions')
+            .select('id')
+            .eq('user_id', userId)
+            .limit(1);
+          shouldUnlock = !!(dayCompletions && dayCompletions.length > 0);
           break;
         case 'three_day_streak':
-          shouldUnlock = summary.current_streak >= 3;
+          shouldUnlock = (summary.current_streak || 0) >= 3;
           break;
         case 'seven_day_streak':
           shouldUnlock = summary.current_streak >= 7;
@@ -345,7 +447,7 @@ export async function checkAchievements(userId: string): Promise<{ success: bool
             .eq('user_id', userId)
             .eq('completion_type', 'exercise')
             .limit(1);
-          shouldUnlock = workoutCompletions && workoutCompletions.length > 0;
+          shouldUnlock = !!(workoutCompletions && workoutCompletions.length > 0);
           break;
         case 'first_meal':
           // Check if user has completed any meal
@@ -355,7 +457,7 @@ export async function checkAchievements(userId: string): Promise<{ success: bool
             .eq('user_id', userId)
             .eq('completion_type', 'meal')
             .limit(1);
-          shouldUnlock = mealCompletions && mealCompletions.length > 0;
+          shouldUnlock = !!(mealCompletions && mealCompletions.length > 0);
           break;
         case 'aura_collector':
           shouldUnlock = summary.total_aura >= 100;
@@ -498,13 +600,36 @@ export async function handleMealCompletion(
       .eq('event_date', today);
 
     if (completedMeals && completedMeals.length >= totalMeals) {
-      // All meals completed - add bonus
-      await addAuraPoints(
-        userId,
-        AURA_EVENT_TYPES.ALL_MEALS_DAY,
-        AURA_POINTS.ALL_MEALS_BONUS,
-        'All meals completed today!'
-      );
+      // All meals completed - add bonus (5 points)
+      // Check if bonus already added today
+      const today = new Date().toISOString().split('T')[0];
+      const { data: existingBonus } = await supabase
+        .from('aura_events')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('event_type', AURA_EVENT_TYPES.ALL_MEALS_DAY)
+        .eq('event_date', today)
+        .maybeSingle();
+      
+      if (!existingBonus) {
+        await addAuraPoints(
+          userId,
+          AURA_EVENT_TYPES.ALL_MEALS_DAY,
+          AURA_POINTS.ALL_MEALS_BONUS,
+          'All meals completed today!',
+          {},
+          false // Update store since this is a new bonus
+        );
+        
+        // Also update Zustand store optimistically
+        try {
+          const { useAuraStore } = await import('./stores/auraStore');
+          const auraStore = useAuraStore.getState();
+          await auraStore.addAuraPoints(AURA_POINTS.ALL_MEALS_BONUS, userId);
+        } catch (storeError) {
+          // Silently fail if store not available
+        }
+      }
     }
 
     return { success: true, auraEarned: AURA_POINTS.MEAL_COMPLETION };

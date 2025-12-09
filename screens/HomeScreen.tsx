@@ -20,6 +20,8 @@ import { getUserActivePlan, WorkoutPlan, DietPlan } from '../utils/planService';
 import { useInstantUserProfile, useInstantUserPlan } from '../utils/useInstantData';
 import { subscribeToMealCompletion } from '../utils/instantDataManager';
 import { getNextUncompletedMeal } from '../utils/completionService';
+import { useCaloriesStore, useAuraStore } from '../utils/stores';
+import { useInitializeStores } from '../utils/hooks/useInitializeStores';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useNotificationTriggers } from '../utils/useNotificationTriggers';
 // Import Coach Glow components
@@ -82,12 +84,19 @@ const HomeScreen: React.FC = () => {
   // Only wait for essential data for fast load - don't wait for meal data calculation
   const loading = profileLoading || planLoading;
   
+  // Zustand stores for instant data access
+  const consumedCalories = useCaloriesStore((state) => state.consumedCalories);
+  const totalCalories = useCaloriesStore((state) => state.totalCalories);
+  const loadCaloriesFromCache = useCaloriesStore((state) => state.loadFromCache);
+  const syncCaloriesWithDB = useCaloriesStore((state) => state.syncWithDatabase);
+  const addMealCompletion = useCaloriesStore((state) => state.addMealCompletion);
+  const setTotalCaloriesStore = useCaloriesStore((state) => state.setTotalCalories);
+  const resetCaloriesStore = useCaloriesStore((state) => state.reset);
+  
   // Other state variables
   const [currentDate, setCurrentDate] = useState(new Date());
   const [currentDateString, setCurrentDateString] = useState<string>(new Date().toISOString().split('T')[0]);
   const [nextUncompletedMeal, setNextUncompletedMeal] = useState<any>(null);
-  const [consumedCalories, setConsumedCalories] = useState(0);
-  const [totalCalories, setTotalCalories] = useState(0);
   const [isCoachGlowVisible, setIsCoachGlowVisible] = useState(false);
   const [hasLoggedWorkoutToday, setHasLoggedWorkoutToday] = useState(false);
   const [hasLoggedMealToday, setHasLoggedMealToday] = useState(false);
@@ -213,64 +222,8 @@ const HomeScreen: React.FC = () => {
     (navigation as any).navigate('Plan', { initialTab: 'meals' });
   };
 
-  // Function to calculate consumed calories from completed meals AND food scanner
-  const calculateConsumedCalories = async () => {
-    if (!user?.id) {
-      return 0;
-    }
-    
-    try {
-      // Calculate calories from completed planned meals
-      let plannedMealCalories = 0;
-      if (userPlan) {
-        const currentDiet = getCurrentDayDiet();
-        if (currentDiet?.meals) {
-          const { getCompletedMeals } = await import('../utils/completionService');
-          const completedMealsResult = await getCompletedMeals(user.id);
-          
-          if (completedMealsResult.success && completedMealsResult.data) {
-            const completedIndices = new Set(completedMealsResult.data.map(completion => completion.meal_index));
-            
-            plannedMealCalories = currentDiet.meals
-              .filter((_: any, index: number) => completedIndices.has(index))
-              .reduce((total: number, meal: any) => {
-                // Try to get calories from kcal field first, then from description
-                let calories = meal.kcal || 0;
-                if (calories === 0 && meal.description) {
-                  calories = extractCaloriesFromDescription(meal.description);
-                }
-                
-                return total + calories;
-              }, 0);
-          }
-        }
-      }
-      
-      // Calculate calories from food scanner entries
-      let scannerCalories = 0;
-      try {
-        const { getDailyNutritionSummary } = await import('../utils/dailyFoodIntakeService');
-        const scannerResult = await getDailyNutritionSummary(user.id);
-        
-        if (scannerResult.success && scannerResult.data) {
-          scannerCalories = scannerResult.data.total_calories || 0;
-        }
-      } catch (scannerError) {
-        console.log('Could not fetch scanner calories:', scannerError);
-        // Continue without scanner calories if service fails
-      }
-      
-      const totalCalories = plannedMealCalories + scannerCalories;
-      console.log(`Total consumed calories: ${totalCalories} (Planned: ${plannedMealCalories}, Scanner: ${scannerCalories})`);
-      
-      return totalCalories;
-    } catch (error) {
-      console.error('Error calculating consumed calories:', error);
-      return 0;
-    }
-  };
-
   // Function to refresh next uncompleted meal and consumed calories
+  // Now uses Zustand store for instant access
   const refreshMealData = async () => {
     if (!user?.id || !userPlan) {
       setIsLoadingMealData(false);
@@ -280,26 +233,33 @@ const HomeScreen: React.FC = () => {
     try {
       setIsLoadingMealData(true);
       
-      const [nextMeal, consumed] = await Promise.all([
-        getNextUncompletedMealForToday(),
-        calculateConsumedCalories()
-      ]);
+      // Load from cache first (instant)
+      await loadCaloriesFromCache(user.id, currentDateString);
       
+      // Calculate total calories for the day
       const total = getTotalCalories();
+      setTotalCaloriesStore(total);
+      
+      // Get next meal
+      const nextMeal = await getNextUncompletedMealForToday();
+      setNextUncompletedMeal(nextMeal);
       
       // Check if user has logged activities today
-      const hasMeals = consumed > 0;
+      const hasMeals = consumedCalories > 0;
       setHasLoggedMealToday(hasMeals);
       
       // TODO: Add workout completion check when workout service is available
       setHasLoggedWorkoutToday(false);
       
-      setNextUncompletedMeal(nextMeal);
-      setConsumedCalories(consumed);
-      setTotalCalories(total);
       setIsLoadingMealData(false);
       setIsInitialLoad(false);
+      
+      // Sync with database in background (non-blocking)
+      syncCaloriesWithDB(user.id, currentDateString, userPlan).catch(err => {
+        console.error('Background sync error:', err);
+      });
     } catch (error) {
+      console.error('Error refreshing meal data:', error);
       setIsLoadingMealData(false);
       setIsInitialLoad(false);
     }
@@ -307,12 +267,25 @@ const HomeScreen: React.FC = () => {
 
   // Instant data is now handled by useInstantUserProfile and useInstantUserPlan hooks
   
-  // Fetch meal data when plan changes
+  // Initialize all stores on mount
+  useInitializeStores(user?.id || null, userPlan);
+
+  // Initialize calories store on mount and when user/plan changes
   useEffect(() => {
-    if (userPlan) {
+    if (user?.id && userPlan) {
+      // Load from cache immediately (instant)
+      loadCaloriesFromCache(user.id, currentDateString).then(() => {
+        // Then sync with DB in background
+        syncCaloriesWithDB(user.id, currentDateString, userPlan);
+      });
+      
+      // Calculate and set total calories
+      const total = getTotalCalories();
+      setTotalCaloriesStore(total);
+      
       refreshMealData();
     }
-  }, [userPlan]);
+  }, [user?.id, userPlan, currentDateString]);
 
   // Periodic date check for when app stays open overnight
   useEffect(() => {
@@ -322,7 +295,7 @@ const HomeScreen: React.FC = () => {
         // Date has changed - reset calorie tracking for new day
         setCurrentDateString(newDate);
         setCurrentDate(new Date());
-        setConsumedCalories(0);
+        resetCaloriesStore();
         setHasLoggedMealToday(false);
         setHasLoggedWorkoutToday(false);
         setNextUncompletedMeal(null);
@@ -349,7 +322,7 @@ const HomeScreen: React.FC = () => {
           // Date has changed - reset calorie tracking for new day
           setCurrentDateString(newDate);
           setCurrentDate(new Date());
-          setConsumedCalories(0);
+          resetCaloriesStore();
           setHasLoggedMealToday(false);
           setHasLoggedWorkoutToday(false);
           setNextUncompletedMeal(null);
@@ -369,35 +342,51 @@ const HomeScreen: React.FC = () => {
   }, [user, userPlan, currentDateString]);
 
   // Subscribe to meal completion events for instant calorie updates
+  // The store already handles optimistic updates, so we just need to refresh next meal
   useEffect(() => {
     if (!user?.id || !userPlan) return;
 
     const unsubscribe = subscribeToMealCompletion(() => {
-      // Immediately recalculate calories when meal is completed
-      calculateConsumedCalories().then(consumed => {
-        setConsumedCalories(consumed);
-        setHasLoggedMealToday(consumed > 0);
-        // Also refresh next meal data
-        getNextUncompletedMealForToday().then(nextMeal => {
-          setNextUncompletedMeal(nextMeal);
-        }).catch(() => {
-          // Silently handle errors
-        });
+      // Calories are already updated optimistically in the store
+      // Just refresh next meal data
+      getNextUncompletedMealForToday().then(nextMeal => {
+        setNextUncompletedMeal(nextMeal);
       }).catch(() => {
         // Silently handle errors
       });
+      
+      // Update hasLoggedMealToday based on store value
+      setHasLoggedMealToday(consumedCalories > 0);
+      
+      // Sync with DB in background
+      if (user?.id) {
+        syncCaloriesWithDB(user.id, currentDateString, userPlan).catch(() => {
+          // Silently handle errors
+        });
+      }
     });
 
     return unsubscribe;
-  }, [user?.id, userPlan]);
+  }, [user?.id, userPlan, currentDateString, consumedCalories]);
 
   // Refresh meal data when HomeScreen comes into focus
+  // This ensures calories are updated when returning from PlanScreen
   useFocusEffect(
     React.useCallback(() => {
       if (user && userPlan) {
+        // Reload from cache to get latest store values (includes optimistic updates)
+        loadCaloriesFromCache(user.id, currentDateString).then(() => {
+          // Delay sync slightly to give DB saves time to complete
+          // This prevents overwriting optimistic updates with stale DB data
+          setTimeout(() => {
+            syncCaloriesWithDB(user.id, currentDateString, userPlan).catch(() => {
+              // Silently handle errors
+            });
+          }, 500); // 500ms delay to allow DB saves to complete
+        });
         refreshMealData();
       }
-    }, [user, userPlan])
+    }, [user, userPlan, currentDateString])
   );
 
   // Calculate calorie progress with overflow handling

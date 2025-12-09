@@ -39,16 +39,43 @@ export interface ExerciseCompletion {
 
 /**
  * Mark a specific meal as completed - OPTIMIZED FOR INSTANT RESPONSE
+ * Now includes optimistic calorie updates via Zustand store
  */
 export async function markMealAsCompleted(
   userId: string,
   planId: string,
   mealIndex: number,
   mealName: string,
-  date?: string
+  date?: string,
+  mealCalories?: number // Optional: calories for this meal for instant updates
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const completedDate = date || new Date().toISOString().split('T')[0];
+    
+    // Optimistic update: Always add meal completion to store (even if calories are 0)
+    // This ensures the meal is marked as completed regardless of calorie value
+    try {
+      const { useCaloriesStore } = await import('./stores/caloriesStore');
+      const store = useCaloriesStore.getState();
+      // Use mealCalories if provided, otherwise default to 0
+      // This ensures meal is always marked as completed
+      const caloriesToAdd = mealCalories !== undefined ? mealCalories : 0;
+      // Pass userId and date to persist immediately
+      await store.addMealCompletion(mealIndex, caloriesToAdd, userId, completedDate);
+    } catch (storeError) {
+      // Log error but don't fail - backward compatibility
+      console.error('Calories store update failed:', storeError);
+    }
+    
+    // Optimistic update: Add aura points to store immediately (3 points for meal)
+    try {
+      const { useAuraStore } = await import('./stores/auraStore');
+      const auraStore = useAuraStore.getState();
+      await auraStore.addAuraPoints(3, userId); // AURA_POINTS.MEAL_COMPLETION = 3
+    } catch (storeError) {
+      // Silently fail if store not available - backward compatibility
+      console.log('Aura store update skipped:', storeError);
+    }
     
     // Return success immediately - database operations happen in background
     // This ensures instant UI response
@@ -91,10 +118,34 @@ export async function markMealAsCompleted(
           return;
         }
 
-        // Add Aura points for meal completion
+        // Add Aura points to database (but don't update store again - already done optimistically)
+        // Only update DB to keep it in sync
         try {
-          await handleMealCompletion(userId, mealIndex, 3); // Assuming 3 meals per day
+          const { addAuraPoints, AURA_EVENT_TYPES, AURA_POINTS, handleMealCompletion } = await import('./auraService');
+          // Use handleMealCompletion which checks for all meals bonus
+          // We need to pass totalMeals - for now we'll let it check from DB
+          // Get plan to find total meals
+          const { data: planData } = await supabase
+            .from('user_plans')
+            .select('plan_data')
+            .eq('user_id', userId)
+            .eq('is_active', true)
+            .maybeSingle();
+          
+          let totalMeals = 3; // Default
+          if (planData?.plan_data?.meals) {
+            totalMeals = planData.plan_data.meals.length;
+          }
+          
+          // This will add meal completion points and check for all meals bonus
+          await handleMealCompletion(userId, mealIndex, totalMeals);
         } catch (auraError) {
+          // Fallback to direct addAuraPoints if handleMealCompletion fails
+          try {
+            const { addAuraPoints, AURA_EVENT_TYPES, AURA_POINTS } = await import('./auraService');
+            await addAuraPoints(userId, AURA_EVENT_TYPES.MEAL_COMPLETION, AURA_POINTS.MEAL_COMPLETION, `Completed meal ${mealIndex + 1}`, { meal_index: mealIndex }, true);
+          } catch (fallbackError) {
+          }
         }
       } catch (error) {
       }
@@ -118,6 +169,18 @@ export async function markExerciseAsCompleted(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const completedDate = date || new Date().toISOString().split('T')[0];
+    
+    // Optimistic update: Add aura points to store immediately
+    try {
+      const { useAuraStore } = await import('./stores/auraStore');
+      const auraStore = useAuraStore.getState();
+      // Add 10 points for exercise completion (AURA_POINTS.EXERCISE_COMPLETION = 10)
+      // Pass userId to persist immediately
+      await auraStore.addAuraPoints(10, userId);
+    } catch (storeError) {
+      // Silently fail if store not available - backward compatibility
+      console.log('Aura store update skipped:', storeError);
+    }
     
     // Return success immediately - database operations happen in background
     // This ensures instant UI response
@@ -160,10 +223,67 @@ export async function markExerciseAsCompleted(
           return;
         }
 
-        // Add Aura points for exercise completion
+        // Add Aura points to database (but don't update store again - already done optimistically)
+        // Only update DB to keep it in sync
         try {
           const { addAuraPoints, AURA_EVENT_TYPES, AURA_POINTS } = await import('./auraService');
-          await addAuraPoints(userId, AURA_EVENT_TYPES.EXERCISE_COMPLETION, AURA_POINTS.EXERCISE_COMPLETION, `Completed exercise ${exerciseIndex + 1}`, { exercise_index: exerciseIndex });
+          // Skip store update since we already did it optimistically
+          await addAuraPoints(userId, AURA_EVENT_TYPES.EXERCISE_COMPLETION, AURA_POINTS.EXERCISE_COMPLETION, `Completed exercise ${exerciseIndex + 1}`, { exercise_index: exerciseIndex }, true);
+          
+          // Check if all exercises are completed and add bonus (5 points)
+          // Get plan to find total exercises
+          const { data: planData } = await supabase
+            .from('user_plans')
+            .select('plan_data')
+            .eq('user_id', userId)
+            .eq('is_active', true)
+            .maybeSingle();
+          
+          let totalExercises = 3; // Default
+          if (planData?.plan_data?.workouts) {
+            totalExercises = planData.plan_data.workouts.length;
+          }
+          
+          // Check if all exercises are completed today
+          const today = new Date().toISOString().split('T')[0];
+          const { data: completedExercises } = await supabase
+            .from('exercise_completions')
+            .select('exercise_index')
+            .eq('user_id', userId)
+            .eq('completed_date', today)
+            .eq('is_active', true);
+          
+          if (completedExercises && completedExercises.length >= totalExercises) {
+            // Check if bonus already added today
+            const { data: existingBonus } = await supabase
+              .from('aura_events')
+              .select('id')
+              .eq('user_id', userId)
+              .eq('event_type', AURA_EVENT_TYPES.ALL_EXERCISES_DAY)
+              .eq('event_date', today)
+              .maybeSingle();
+            
+            if (!existingBonus) {
+              // Add bonus optimistically to store
+              try {
+                const { useAuraStore } = await import('./stores/auraStore');
+                const auraStore = useAuraStore.getState();
+                await auraStore.addAuraPoints(AURA_POINTS.ALL_EXERCISES_BONUS, userId);
+              } catch (storeError) {
+                // Silently fail if store not available
+              }
+              
+              // Add to database
+              await addAuraPoints(
+                userId,
+                AURA_EVENT_TYPES.ALL_EXERCISES_DAY,
+                AURA_POINTS.ALL_EXERCISES_BONUS,
+                'All exercises completed today!',
+                {},
+                true // Skip store update since we already did it
+              );
+            }
+          }
         } catch (auraError) {
         }
       } catch (error) {

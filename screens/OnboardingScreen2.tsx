@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,18 +9,42 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../utils/AuthContext';
+import * as AppleAuthentication from 'expo-apple-authentication';
 
 const { width, height } = Dimensions.get('window');
 
 const OnboardingScreen2: React.FC = () => {
   const navigation = useNavigation();
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle, signInWithApple } = useAuth();
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
+  const [isAppleAvailable, setIsAppleAvailable] = useState(false);
+
+  // Check if Apple Sign-In is available (iOS only)
+  useEffect(() => {
+    const checkAppleAvailability = async () => {
+      if (Platform.OS === 'ios') {
+        try {
+          const available = await AppleAuthentication.isAvailableAsync();
+          setIsAppleAvailable(available);
+          console.log('🍎 Apple Sign-In available:', available);
+        } catch (error) {
+          console.error('🍎 Error checking Apple Sign-In availability:', error);
+          setIsAppleAvailable(false);
+        }
+      } else {
+        setIsAppleAvailable(false);
+      }
+    };
+
+    checkAppleAvailability();
+  }, []);
 
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
@@ -37,6 +61,98 @@ const OnboardingScreen2: React.FC = () => {
       Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    // Double-check availability before proceeding
+    if (Platform.OS !== 'ios') {
+      Alert.alert('Not Available', 'Apple Sign-In is only available on iOS devices.');
+      return;
+    }
+
+    setAppleLoading(true);
+    try {
+      console.log('🍎 Starting Apple Sign-In...');
+      const { error } = await signInWithApple();
+      
+      if (error) {
+        console.error('🍎 Apple Sign-In error:', error);
+        console.error('🍎 Full error object:', JSON.stringify(error, null, 2));
+        
+        // Build detailed error message
+        let errorMessage = error.message || 'Apple sign-in failed. Please try again.';
+        let errorTitle = 'Sign In Failed';
+        
+        // Add more context based on error type
+        if (error.message) {
+          if (error.message.includes('Invalid login credentials') || error.message.includes('invalid_grant')) {
+            errorTitle = 'Configuration Error';
+            errorMessage = 'Apple Sign-In is not properly configured. Please contact support.\n\nError: ' + error.message;
+          } else if (error.message.includes('redirect_uri_mismatch')) {
+            errorTitle = 'Configuration Error';
+            errorMessage = 'Redirect URL mismatch. Please verify Apple Developer Console and Supabase configuration.\n\nError: ' + error.message;
+          } else if (error.message.includes('client_id')) {
+            errorTitle = 'Configuration Error';
+            errorMessage = 'Service ID mismatch. Please verify Supabase Apple provider configuration.\n\nError: ' + error.message;
+          }
+        }
+        
+        // Don't show alert for user cancellation
+        if (error.message && !error.message.includes('cancelled') && !error.message.includes('canceled')) {
+          Alert.alert(
+            errorTitle,
+            errorMessage,
+            [
+              { text: 'OK', style: 'default' },
+              { 
+                text: 'View Details', 
+                style: 'default',
+                onPress: () => {
+                  Alert.alert(
+                    'Error Details',
+                    `Message: ${error.message}\n\nCode: ${error.code || 'N/A'}\n\nStatus: ${error.status || 'N/A'}`,
+                    [{ text: 'OK' }]
+                  );
+                }
+              }
+            ]
+          );
+        }
+      } else {
+        console.log('🍎 Apple Sign-In successful!');
+        // Navigation will be handled automatically by AppNavigator
+        // based on user's authentication and onboarding status
+      }
+    } catch (err: any) {
+      console.error('🍎 Apple Sign-In exception:', err);
+      console.error('🍎 Exception details:', {
+        message: err?.message,
+        code: err?.code,
+        name: err?.name,
+        stack: err?.stack,
+      });
+      
+      // Show detailed error
+      Alert.alert(
+        'Sign-In Error',
+        `An error occurred during Apple Sign-In.\n\n${err?.message || 'Unknown error'}\n\nPlease check:\n1. You are signed into iCloud\n2. Apple Sign-In is configured in Supabase\n3. Your device supports Apple Sign-In`,
+        [
+          { text: 'OK' },
+          {
+            text: 'Details',
+            onPress: () => {
+              Alert.alert(
+                'Error Details',
+                `Message: ${err?.message || 'N/A'}\n\nCode: ${err?.code || 'N/A'}\n\nName: ${err?.name || 'N/A'}`,
+                [{ text: 'OK' }]
+              );
+            }
+          }
+        ]
+      );
+    } finally {
+      setAppleLoading(false);
     }
   };
 
@@ -93,6 +209,33 @@ const OnboardingScreen2: React.FC = () => {
               <Text style={styles.buttonText}>Continue with Google</Text>
             )}
           </TouchableOpacity>
+
+          {/* Apple Button - Only show on iOS when available */}
+          {Platform.OS === 'ios' && isAppleAvailable ? (
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.CONTINUE}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              cornerRadius={22}
+              style={styles.appleButton}
+              onPress={handleAppleSignIn}
+            />
+          ) : Platform.OS === 'ios' && !isAppleAvailable ? (
+            // Fallback button for iOS when Apple Sign-In is not available
+            <TouchableOpacity
+              style={[styles.appleButtonFallback, appleLoading && styles.buttonDisabled]}
+              onPress={handleAppleSignIn}
+              disabled={appleLoading}
+            >
+              {appleLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="logo-apple" size={20} color="#FFFFFF" style={styles.iconStyle} />
+                  <Text style={styles.appleButtonText}>Continue with Apple</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : null}
 
           {/* Email Sign Up Button */}
           <TouchableOpacity style={styles.emailButton} onPress={handleEmailSignUp}>
@@ -193,6 +336,32 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 6,
     elevation: 4,
+  },
+  appleButton: {
+    width: '100%',
+    height: 50,
+  },
+  appleButtonFallback: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    backgroundColor: '#000000',
+    borderRadius: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 4,
+    minHeight: 50,
+  },
+  appleButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    marginLeft: 8,
   },
   emailButton: {
     flexDirection: 'row',

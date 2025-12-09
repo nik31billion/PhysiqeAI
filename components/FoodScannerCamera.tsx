@@ -141,7 +141,7 @@ const FoodScannerCamera: React.FC<FoodScannerCameraProps> = ({
       pulseAnimation.stop();
       scanLineAnimation.stop();
     };
-  }, [scanMode, pickImage]);
+  }, [scanMode]); // Removed pickImage from dependencies to prevent infinite re-renders
 
   // NOW we can have conditional returns - all hooks have been called
   if (!permission) {

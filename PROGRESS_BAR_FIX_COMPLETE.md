@@ -32,7 +32,7 @@ After deep analysis, I identified the following issues:
 **Before:**
 ```typescript
 // Timeline only went to 65 seconds, then stuck at 97%
-} else { // After 65s: Stay at 97% until backend completes
+ else { // After 65s: Stay at 97% until backend completes
   progress = 97;
   stageIndex = 8;
 }

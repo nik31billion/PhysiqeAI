@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { captureException, addBreadcrumb, startTransaction } from './sentryConfig'
 
 export interface CoachGlowMessage {
   userId: string
@@ -57,25 +58,94 @@ export interface ChatHistory {
 export async function sendMessageToCoachGlow(
   message: CoachGlowMessage
 ): Promise<CoachGlowResponse> {
+  const transaction = startTransaction('coach_glow_chat', 'api.call');
+  const startTime = Date.now();
+  
   try {
+    addBreadcrumb('Sending message to Coach Glow', 'coach_glow', {
+      userId: message.userId,
+      messageLength: message.message.length,
+      hasContext: !!message.context,
+      historyLength: message.conversationHistory?.length || 0,
+    });
+    
+    transaction.setData('user_id', message.userId);
+    transaction.setData('message_length', message.message.length);
+    
+    // Track the API call performance
+    const apiCallSpan = transaction.startChild('supabase_edge_function', 'http.client');
     const { data, error } = await supabase.functions.invoke('coach-glow', {
       body: message
     })
+    
+    // Finish API call span
+    apiCallSpan.setTag('status', error ? 'error' : 'success');
+    if (error) {
+      apiCallSpan.setTag('error', 'true');
+      apiCallSpan.setData('error_message', error.message);
+      apiCallSpan.setData('error_code', error.status || 'unknown');
+    }
+    apiCallSpan.finish();
 
     // Check if the response contains a user-friendly error message
     if (data && !data.success && data.error) {
-      throw new Error(data.error)
+      const apiError = new Error(data.error);
+      captureException(apiError, {
+        coachGlow: {
+          operation: 'sendMessageToCoachGlow',
+          userId: message.userId,
+          messageLength: message.message.length,
+          apiError: data.error,
+        },
+      });
+      transaction.setTag('error', 'true');
+      transaction.finish();
+      throw apiError;
     }
 
     if (error) {
-      // Provide a user-friendly error message instead of technical details
-      throw new Error('I had trouble connecting. Please try again in a moment.')
+      const supabaseError = new Error('I had trouble connecting. Please try again in a moment.');
+      captureException(supabaseError, {
+        coachGlow: {
+          operation: 'sendMessageToCoachGlow',
+          userId: message.userId,
+          messageLength: message.message.length,
+          supabaseError: error.message,
+          errorCode: error.status || 'unknown',
+        },
+      });
+      transaction.setTag('error', 'true');
+      transaction.finish();
+      throw supabaseError;
     }
 
-    return data as CoachGlowResponse
-  } catch (error) {
+    const duration = Date.now() - startTime;
+    const response = data as CoachGlowResponse;
     
-    throw error
+    transaction.setData('duration_ms', duration);
+    transaction.setData('response_length', response.response.length);
+    transaction.setTag('intent', response.intent || 'general');
+    transaction.setTag('success', 'true');
+    
+    addBreadcrumb('Coach Glow response received', 'coach_glow', {
+      userId: message.userId,
+      intent: response.intent,
+      responseLength: response.response.length,
+      duration,
+    });
+    
+    transaction.setTag('intent', response.intent);
+    transaction.setData('duration', duration);
+    transaction.setData('responseLength', response.response.length);
+    transaction.finish();
+    
+    return response;
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    transaction.setTag('error', 'true');
+    transaction.setData('duration', duration);
+    transaction.finish();
+    throw error;
   }
 }
 
@@ -87,15 +157,50 @@ export async function sendMessageToCoachGlow(
 export async function sendMessageToCoachGlowConcurrently(
   message: CoachGlowMessage
 ): Promise<CoachGlowResponse> {
-  const { concurrentLLMProcessor } = await import('./concurrentLLMProcessor');
+  const transaction = startTransaction('coach_glow_concurrent_chat', 'api.call');
+  const startTime = Date.now();
   
-  console.log(`[CoachGlowService] Adding chat request to concurrent processor for user ${message.userId}`);
-  
-  return await concurrentLLMProcessor.addRequest(
-    message.userId,
-    'coach_chat',
-    message
-  );
+  try {
+    addBreadcrumb('Starting concurrent Coach Glow chat', 'coach_glow', {
+      userId: message.userId,
+      messageLength: message.message.length,
+    });
+    
+    const { concurrentLLMProcessor } = await import('./concurrentLLMProcessor');
+    
+    console.log(`[CoachGlowService] Adding chat request to concurrent processor for user ${message.userId}`);
+    
+    const result = await concurrentLLMProcessor.addRequest(
+      message.userId,
+      'coach_chat',
+      message
+    );
+    
+    const duration = Date.now() - startTime;
+    transaction.setTag('intent', result.intent);
+    transaction.setData('duration', duration);
+    transaction.finish();
+    
+    return result;
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    transaction.setTag('error', 'true');
+    transaction.setData('duration', duration);
+    transaction.finish();
+    
+    if (error instanceof Error) {
+      captureException(error, {
+        coachGlow: {
+          operation: 'sendMessageToCoachGlowConcurrently',
+          userId: message.userId,
+          messageLength: message.message.length,
+          errorMessage: error.message,
+        },
+      });
+    }
+    
+    throw error;
+  }
 }
 
 /**
@@ -104,25 +209,68 @@ export async function sendMessageToCoachGlowConcurrently(
 export async function applyPlanSwap(
   swapRequest: ApplySwapRequest
 ): Promise<ApplySwapResponse> {
+  const transaction = startTransaction('coach_glow_plan_swap', 'api.call');
+  const startTime = Date.now();
+  
   try {
+    addBreadcrumb('Applying plan swap', 'coach_glow', {
+      userId: swapRequest.userId,
+      swapType: swapRequest.swapType,
+      day: swapRequest.day,
+    });
+    
     const { data, error } = await supabase.functions.invoke('apply-plan-swap', {
       body: swapRequest
     })
 
     // Check if the response contains a user-friendly error message
     if (data && !data.success && data.error) {
-      throw new Error(data.error)
+      const apiError = new Error(data.error);
+      captureException(apiError, {
+        coachGlow: {
+          operation: 'applyPlanSwap',
+          userId: swapRequest.userId,
+          swapType: swapRequest.swapType,
+          day: swapRequest.day,
+          apiError: data.error,
+        },
+      });
+      transaction.setTag('error', 'true');
+      transaction.finish();
+      throw apiError;
     }
 
     if (error) {
-      // Provide a user-friendly error message instead of technical details
-      throw new Error('I had trouble updating your plan. Please try again.')
+      const supabaseError = new Error('I had trouble updating your plan. Please try again.');
+      captureException(supabaseError, {
+        coachGlow: {
+          operation: 'applyPlanSwap',
+          userId: swapRequest.userId,
+          swapType: swapRequest.swapType,
+          day: swapRequest.day,
+          supabaseError: error.message,
+          errorCode: error.status || 'unknown',
+        },
+      });
+      transaction.setTag('error', 'true');
+      transaction.finish();
+      throw supabaseError;
     }
 
-    return data as ApplySwapResponse
-  } catch (error) {
+    const duration = Date.now() - startTime;
+    const response = data as ApplySwapResponse;
     
-    throw error
+    transaction.setTag('success', response.success.toString());
+    transaction.setData('duration', duration);
+    transaction.finish();
+    
+    return response;
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    transaction.setTag('error', 'true');
+    transaction.setData('duration', duration);
+    transaction.finish();
+    throw error;
   }
 }
 
@@ -134,6 +282,8 @@ export async function getCoachGlowChatHistory(
   limit: number = 20
 ): Promise<ChatHistory[]> {
   try {
+    addBreadcrumb('Fetching Coach Glow chat history', 'coach_glow', { userId, limit });
+    
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
@@ -146,13 +296,22 @@ export async function getCoachGlowChatHistory(
       .limit(limit)
 
     if (error) {
-      throw new Error(`Failed to fetch chat history: ${error.message}`)
+      const dbError = new Error(`Failed to fetch chat history: ${error.message}`);
+      captureException(dbError, {
+        coachGlow: {
+          operation: 'getCoachGlowChatHistory',
+          userId,
+          limit,
+          errorCode: error.code,
+          errorMessage: error.message,
+        },
+      });
+      throw dbError;
     }
 
     // Reverse to get chronological order (oldest first) for proper display
     return (data || []).reverse()
   } catch (error) {
-    
     throw error
   }
 }

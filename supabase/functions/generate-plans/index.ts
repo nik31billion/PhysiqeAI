@@ -416,76 +416,368 @@ Do NOT add explanations or text outside the JSON.`
 }
 
 /**
+ * Creates a SIMPLIFIED prompt for two-stage generation (Option 1)
+ * Gemini generates simple lists, code structures them
+ */
+function createSimplifiedGeminiPrompt(userData: UserProfile, planType?: 'workout' | 'diet' | 'both'): string {
+  const generateBoth = !planType || planType === 'both'
+  const generateWorkout = generateBoth || planType === 'workout'
+  const generateDiet = generateBoth || planType === 'diet'
+  
+  const workoutSplit = userData.fitness_experience.toLowerCase().includes('beginner') ? 'full-body' :
+                      userData.fitness_experience.toLowerCase().includes('intermediate') ? 'push-pull-legs' :
+                      userData.fitness_experience.toLowerCase().includes('advanced') ? 'bodybuilder' : 'upper-lower'
+  
+  return `Generate a personalized fitness plan. Output ONLY a simple JSON object with lists - NO complex nesting.
+
+User: ${userData.age}yo ${userData.gender}, ${userData.height_cm}cm, ${userData.weight_kg}kg → ${userData.target_weight_kg || userData.weight_kg}kg in ${userData.target_timeline_weeks} weeks
+Fitness: ${userData.fitness_experience}, Activity: ${userData.activity_level}, Goal: ${userData.fitness_goal}
+Diet: ${userData.dietary_preferences}, ${userData.meal_frequency}, Target: ${userData.target_calories} kcal/day
+Allergies: ${userData.allergies?.join(', ') || 'None'}
+
+Output format (SIMPLE - just lists):
+{
+  "workout": {
+    "monday": ["Exercise 1", "Exercise 2", "Exercise 3"],
+    "tuesday": ["Exercise 1", "Exercise 2"],
+    ...
+  },
+  "diet": {
+    "monday": [
+      {"meal": "Breakfast", "name": "Meal name", "description": "Brief description"},
+      {"meal": "Lunch", "name": "Meal name", "description": "Brief description"},
+      ...
+    ],
+    ...
+  }
+}
+
+${generateWorkout ? `Workout: ${workoutSplit} split, ${userData.fitness_experience} level. List 4-6 exercises per day.` : ''}
+${generateDiet ? `Diet: ${userData.target_calories} kcal/day total. List 3-4 meals per day with names and brief descriptions.` : ''}
+
+IMPORTANT: Output ONLY valid JSON. No markdown, no explanations, no extra text.`
+}
+
+/**
+ * Structures simple Gemini lists into full plan format
+ */
+function structureSimplePlan(simpleResponse: any, userData: UserProfile): GeminiResponse {
+  const workout: any[] = []
+  const diet: any[] = []
+  
+  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+  const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+  
+  // Structure workout
+  if (simpleResponse.workout) {
+    days.forEach((day, index) => {
+      const exercises = simpleResponse.workout[day] || []
+      const routine = exercises.map((exerciseName: string) => {
+        // Determine sets/reps based on fitness level
+        const isBeginner = userData.fitness_experience.toLowerCase().includes('beginner')
+        const isAdvanced = userData.fitness_experience.toLowerCase().includes('advanced')
+        
+        return {
+          exercise: exerciseName,
+          sets: isBeginner ? 3 : isAdvanced ? 4 : 3,
+          reps: isBeginner ? "12-15" : isAdvanced ? "6-10" : "8-12",
+          rest: isBeginner ? "60-90 sec" : isAdvanced ? "2-3 min" : "90 sec-2 min"
+        }
+      })
+      
+      // Determine workout type based on exercises
+      let type = "Full Body"
+      const exerciseStr = exercises.join(' ').toLowerCase()
+      if (exerciseStr.includes('bench') || exerciseStr.includes('press') || exerciseStr.includes('push')) type = "Push"
+      if (exerciseStr.includes('pull') || exerciseStr.includes('row') || exerciseStr.includes('deadlift')) type = "Pull"
+      if (exerciseStr.includes('squat') || exerciseStr.includes('leg') || exerciseStr.includes('lunge')) type = "Legs"
+      if (routine.length === 0) type = "Rest"
+      
+      workout.push({
+        day: dayNames[index],
+        type: type,
+        routine: routine
+      })
+    })
+  }
+  
+  // Structure diet
+  if (simpleResponse.diet) {
+    // target_calories is already the daily target (calculated during onboarding)
+    const caloriesPerDay = userData.target_calories || 2000 // Fallback to 2000 if missing
+    console.log(`[Structure Plan] Using target_calories: ${caloriesPerDay} kcal/day for user ${userData.id}`)
+    
+    days.forEach((day, index) => {
+      const meals = simpleResponse.diet[day] || []
+      
+      // Ensure at least 3 meals
+      const mealList = meals.length >= 3 ? meals : [
+        ...meals,
+        ...Array(3 - meals.length).fill(null).map((_, i) => ({
+          meal: ['Breakfast', 'Lunch', 'Dinner'][meals.length + i],
+          name: 'Healthy meal',
+          description: 'Balanced nutritious meal'
+        }))
+      ]
+      
+      // Calculate calorie distribution to EXACTLY match target
+      // Standard distribution: Breakfast 30%, Lunch 35%, Dinner 35% (or adjust for snacks)
+      const mealCalories: number[] = []
+      let totalAllocated = 0
+      
+      mealList.forEach((meal: any, mealIndex: number) => {
+        let kcal = 0
+        const mealType = (meal.meal || '').toLowerCase()
+        
+        if (mealType.includes('breakfast')) {
+          kcal = Math.floor(caloriesPerDay * 0.30)
+        } else if (mealType.includes('lunch')) {
+          kcal = Math.floor(caloriesPerDay * 0.35)
+        } else if (mealType.includes('dinner')) {
+          kcal = Math.floor(caloriesPerDay * 0.35)
+        } else if (mealType.includes('snack')) {
+          kcal = Math.floor(caloriesPerDay * 0.10)
+        } else {
+          // Default: distribute evenly among remaining meals
+          const remainingMeals = mealList.length - mealIndex
+          kcal = Math.floor((caloriesPerDay - totalAllocated) / remainingMeals)
+        }
+        
+        mealCalories.push(kcal)
+        totalAllocated += kcal
+      })
+      
+      // CRITICAL: Adjust to ensure EXACT match with target calories
+      const difference = caloriesPerDay - totalAllocated
+      if (difference !== 0) {
+        // Add/subtract the difference to the largest meal (usually dinner)
+        const largestMealIndex = mealCalories.indexOf(Math.max(...mealCalories))
+        mealCalories[largestMealIndex] += difference
+      }
+      
+      // Verify total matches exactly
+      const finalTotal = mealCalories.reduce((sum, cal) => sum + cal, 0)
+      if (finalTotal !== caloriesPerDay) {
+        console.log(`[Structure Plan] Warning: Day ${dayNames[index]} total ${finalTotal} doesn't match target ${caloriesPerDay}, adjusting...`)
+        const finalDiff = caloriesPerDay - finalTotal
+        mealCalories[mealCalories.length - 1] += finalDiff
+      }
+      
+      const structuredMeals = mealList.map((meal: any, mealIndex: number) => {
+        const kcal = mealCalories[mealIndex]
+        
+        // Estimate macros (40% protein, 30% carbs, 30% fat)
+        const protein_g = Math.floor((kcal * 0.40) / 4)
+        const carbs_g = Math.floor((kcal * 0.30) / 4)
+        const fat_g = Math.floor((kcal * 0.30) / 9)
+        
+        return {
+          meal: meal.meal || ['Breakfast', 'Lunch', 'Dinner', 'Snack'][mealIndex] || 'Meal',
+          description: meal.description || meal.name || 'Healthy meal',
+          kcal: kcal,
+          protein_g: protein_g,
+          carbs_g: carbs_g,
+          fat_g: fat_g,
+          ingredients: generateIngredients(meal.name || meal.description || 'meal', userData.dietary_preferences),
+          instructions: generateInstructions(meal.name || meal.description || 'meal'),
+          cooking_time: "20-30 minutes",
+          serving_size: "1 serving"
+        }
+      })
+      
+      // Final verification
+      const dayTotal = structuredMeals.reduce((sum: number, m: any) => sum + m.kcal, 0)
+      console.log(`[Structure Plan] Day ${dayNames[index]}: ${dayTotal} kcal (target: ${caloriesPerDay})`)
+      
+      diet.push({
+        day: dayNames[index],
+        meals: structuredMeals
+      })
+    })
+  }
+  
+  return { workout, diet }
+}
+
+/**
+ * Helper: Generate basic ingredients list
+ */
+function generateIngredients(mealName: string, dietaryPreference: string): string[] {
+  const meal = mealName.toLowerCase()
+  const ingredients: string[] = []
+  
+  if (meal.includes('chicken')) ingredients.push('200g chicken breast', 'vegetables', 'olive oil')
+  else if (meal.includes('salmon') || meal.includes('fish')) ingredients.push('200g salmon', 'vegetables', 'lemon')
+  else if (meal.includes('eggs')) ingredients.push('3 eggs', 'vegetables', 'whole grain bread')
+  else if (meal.includes('oatmeal') || meal.includes('oats')) ingredients.push('1 cup oats', 'fruits', 'nuts')
+  else if (meal.includes('salad')) ingredients.push('mixed greens', 'protein source', 'dressing')
+  else ingredients.push('protein source', 'vegetables', 'whole grains')
+  
+  if (dietaryPreference.toLowerCase().includes('vegetarian') || dietaryPreference.toLowerCase().includes('vegan')) {
+    return ingredients.map(i => i.replace('chicken', 'tofu').replace('salmon', 'tofu').replace('fish', 'tofu').replace('eggs', 'tofu'))
+  }
+  
+  return ingredients
+}
+
+/**
+ * Helper: Generate basic cooking instructions
+ */
+function generateInstructions(mealName: string): string[] {
+  return [
+    'Prepare ingredients according to recipe',
+    'Cook using healthy methods (grilled, baked, steamed)',
+    'Season to taste',
+    'Serve hot and enjoy'
+  ]
+}
+
+/**
  * Creates a fallback plan structure when JSON parsing completely fails
  */
 function createFallbackPlan(): GeminiResponse {
-  
-  
   return {
     workout: [
-      { day: "Monday", routine: [{ exercise: "Push-ups", sets: 3, reps: 10, rest: "1 min" }] },
-      { day: "Tuesday", routine: [{ exercise: "Squats", sets: 3, reps: 15, rest: "1 min" }] },
-      { day: "Wednesday", routine: [{ exercise: "Plank", reps: "30 seconds", rest: "1 min" }] },
-      { day: "Thursday", routine: [{ exercise: "Lunges", sets: 3, reps: 10, rest: "1 min" }] },
-      { day: "Friday", routine: [{ exercise: "Burpees", sets: 3, reps: 5, rest: "1 min" }] },
-      { day: "Saturday", routine: [{ exercise: "Mountain Climbers", reps: "30 seconds", rest: "1 min" }] },
-      { day: "Sunday", routine: [] }
+      { 
+        day: "Monday", 
+        type: "Push",
+        routine: [
+          { exercise: "Barbell Bench Press", sets: 4, reps: "8-10", rest: "2-3 min" },
+          { exercise: "Overhead Press", sets: 3, reps: "8-12", rest: "2 min" },
+          { exercise: "Incline Dumbbell Press", sets: 3, reps: "10-12", rest: "90 sec" },
+          { exercise: "Lateral Raises", sets: 3, reps: "12-15", rest: "60 sec" },
+          { exercise: "Tricep Dips", sets: 3, reps: "10-12", rest: "60 sec" },
+          { exercise: "Overhead Tricep Extension", sets: 3, reps: "12-15", rest: "60 sec" }
+        ]
+      },
+      { 
+        day: "Tuesday", 
+        type: "Pull",
+        routine: [
+          { exercise: "Deadlifts", sets: 4, reps: "6-8", rest: "3 min" },
+          { exercise: "Pull-ups", sets: 4, reps: "8-10", rest: "2-3 min" },
+          { exercise: "Barbell Rows", sets: 3, reps: "8-12", rest: "2 min" },
+          { exercise: "Lat Pulldowns", sets: 3, reps: "10-12", rest: "90 sec" },
+          { exercise: "Face Pulls", sets: 3, reps: "12-15", rest: "60 sec" },
+          { exercise: "Barbell Curls", sets: 3, reps: "10-12", rest: "60 sec" }
+        ]
+      },
+      { 
+        day: "Wednesday", 
+        type: "Legs",
+        routine: [
+          { exercise: "Barbell Squats", sets: 4, reps: "8-10", rest: "2-3 min" },
+          { exercise: "Romanian Deadlifts", sets: 3, reps: "8-12", rest: "2 min" },
+          { exercise: "Leg Press", sets: 3, reps: "12-15", rest: "90 sec" },
+          { exercise: "Leg Curls", sets: 3, reps: "10-12", rest: "60 sec" },
+          { exercise: "Calf Raises", sets: 4, reps: "15-20", rest: "60 sec" },
+          { exercise: "Hip Thrusts", sets: 3, reps: "12-15", rest: "90 sec" }
+        ]
+      },
+      { 
+        day: "Thursday", 
+        type: "Push",
+        routine: [
+          { exercise: "Incline Barbell Press", sets: 4, reps: "8-10", rest: "2-3 min" },
+          { exercise: "Dumbbell Shoulder Press", sets: 3, reps: "10-12", rest: "2 min" },
+          { exercise: "Cable Flyes", sets: 3, reps: "12-15", rest: "90 sec" },
+          { exercise: "Lateral Raises", sets: 3, reps: "12-15", rest: "60 sec" },
+          { exercise: "Tricep Pushdowns", sets: 3, reps: "10-12", rest: "60 sec" },
+          { exercise: "Close-grip Bench Press", sets: 3, reps: "8-10", rest: "90 sec" }
+        ]
+      },
+      { 
+        day: "Friday", 
+        type: "Pull",
+        routine: [
+          { exercise: "Barbell Rows", sets: 4, reps: "8-10", rest: "2-3 min" },
+          { exercise: "Chin-ups", sets: 4, reps: "8-10", rest: "2-3 min" },
+          { exercise: "T-Bar Rows", sets: 3, reps: "10-12", rest: "2 min" },
+          { exercise: "Cable Rows", sets: 3, reps: "10-12", rest: "90 sec" },
+          { exercise: "Rear Delt Flyes", sets: 3, reps: "12-15", rest: "60 sec" },
+          { exercise: "Hammer Curls", sets: 3, reps: "10-12", rest: "60 sec" }
+        ]
+      },
+      { 
+        day: "Saturday", 
+        type: "Legs",
+        routine: [
+          { exercise: "Front Squats", sets: 4, reps: "8-10", rest: "2-3 min" },
+          { exercise: "Bulgarian Split Squats", sets: 3, reps: "10-12 each", rest: "2 min" },
+          { exercise: "Leg Extensions", sets: 3, reps: "12-15", rest: "90 sec" },
+          { exercise: "Leg Curls", sets: 3, reps: "10-12", rest: "60 sec" },
+          { exercise: "Walking Lunges", sets: 3, reps: "12 each leg", rest: "90 sec" },
+          { exercise: "Standing Calf Raises", sets: 4, reps: "15-20", rest: "60 sec" }
+        ]
+      },
+      { 
+        day: "Sunday", 
+        type: "Rest",
+        routine: []
+      }
     ],
     diet: [
       { 
         day: "Monday", 
         meals: [
-          { meal: "Breakfast", description: "Oatmeal with fruits", kcal: 300, protein_g: 10, carbs_g: 50, fat_g: 8 },
-          { meal: "Lunch", description: "Grilled chicken salad", kcal: 400, protein_g: 30, carbs_g: 20, fat_g: 15 },
-          { meal: "Dinner", description: "Baked salmon with vegetables", kcal: 500, protein_g: 35, carbs_g: 25, fat_g: 20 }
+          { meal: "Breakfast", description: "Scrambled eggs with whole grain toast and avocado", kcal: 550, protein_g: 28, carbs_g: 45, fat_g: 28 },
+          { meal: "Lunch", description: "Grilled chicken breast with quinoa and roasted vegetables", kcal: 650, protein_g: 45, carbs_g: 60, fat_g: 20 },
+          { meal: "Dinner", description: "Baked salmon with sweet potato and steamed broccoli", kcal: 600, protein_g: 40, carbs_g: 50, fat_g: 25 },
+          { meal: "Snack", description: "Greek yogurt with mixed berries", kcal: 200, protein_g: 15, carbs_g: 25, fat_g: 5 }
         ]
       },
       { 
         day: "Tuesday", 
         meals: [
-          { meal: "Breakfast", description: "Greek yogurt with berries", kcal: 250, protein_g: 15, carbs_g: 30, fat_g: 5 },
-          { meal: "Lunch", description: "Turkey wrap", kcal: 450, protein_g: 25, carbs_g: 35, fat_g: 18 },
-          { meal: "Dinner", description: "Quinoa bowl with vegetables", kcal: 400, protein_g: 20, carbs_g: 45, fat_g: 12 }
+          { meal: "Breakfast", description: "Protein oatmeal with banana and almonds", kcal: 500, protein_g: 25, carbs_g: 65, fat_g: 15 },
+          { meal: "Lunch", description: "Turkey and vegetable wrap with hummus", kcal: 600, protein_g: 35, carbs_g: 55, fat_g: 22 },
+          { meal: "Dinner", description: "Lean beef stir-fry with brown rice and mixed vegetables", kcal: 650, protein_g: 42, carbs_g: 60, fat_g: 20 },
+          { meal: "Snack", description: "Apple with peanut butter", kcal: 250, protein_g: 8, carbs_g: 30, fat_g: 12 }
         ]
       },
       { 
         day: "Wednesday", 
         meals: [
-          { meal: "Breakfast", description: "Scrambled eggs with toast", kcal: 350, protein_g: 20, carbs_g: 30, fat_g: 15 },
-          { meal: "Lunch", description: "Lentil soup", kcal: 300, protein_g: 18, carbs_g: 40, fat_g: 8 },
-          { meal: "Dinner", description: "Grilled fish with rice", kcal: 450, protein_g: 30, carbs_g: 35, fat_g: 16 }
+          { meal: "Breakfast", description: "Greek yogurt parfait with granola and fresh berries", kcal: 550, protein_g: 30, carbs_g: 60, fat_g: 18 },
+          { meal: "Lunch", description: "Grilled chicken salad with mixed greens, quinoa, and olive oil dressing", kcal: 600, protein_g: 40, carbs_g: 45, fat_g: 25 },
+          { meal: "Dinner", description: "Baked cod with roasted vegetables and whole grain pasta", kcal: 600, protein_g: 38, carbs_g: 55, fat_g: 20 },
+          { meal: "Snack", description: "Protein shake with banana", kcal: 250, protein_g: 25, carbs_g: 30, fat_g: 5 }
         ]
       },
       { 
         day: "Thursday", 
         meals: [
-          { meal: "Breakfast", description: "Smoothie bowl", kcal: 300, protein_g: 12, carbs_g: 45, fat_g: 10 },
-          { meal: "Lunch", description: "Chicken stir-fry", kcal: 400, protein_g: 28, carbs_g: 25, fat_g: 18 },
-          { meal: "Dinner", description: "Vegetable pasta", kcal: 350, protein_g: 15, carbs_g: 50, fat_g: 12 }
+          { meal: "Breakfast", description: "Whole grain pancakes with eggs and turkey sausage", kcal: 550, protein_g: 30, carbs_g: 60, fat_g: 18 },
+          { meal: "Lunch", description: "Chicken and vegetable soup with whole grain bread", kcal: 600, protein_g: 35, carbs_g: 55, fat_g: 20 },
+          { meal: "Dinner", description: "Grilled pork tenderloin with roasted sweet potatoes and green beans", kcal: 650, protein_g: 45, carbs_g: 50, fat_g: 25 },
+          { meal: "Snack", description: "Mixed nuts and dried fruit", kcal: 200, protein_g: 8, carbs_g: 20, fat_g: 12 }
         ]
       },
       { 
         day: "Friday", 
         meals: [
-          { meal: "Breakfast", description: "Avocado toast", kcal: 320, protein_g: 12, carbs_g: 35, fat_g: 18 },
-          { meal: "Lunch", description: "Tuna salad", kcal: 380, protein_g: 25, carbs_g: 20, fat_g: 22 },
-          { meal: "Dinner", description: "Beef stir-fry", kcal: 480, protein_g: 32, carbs_g: 30, fat_g: 20 }
+          { meal: "Breakfast", description: "Avocado toast with poached eggs and side of fruit", kcal: 550, protein_g: 22, carbs_g: 50, fat_g: 28 },
+          { meal: "Lunch", description: "Tuna salad wrap with whole grain tortilla and mixed vegetables", kcal: 600, protein_g: 35, carbs_g: 55, fat_g: 22 },
+          { meal: "Dinner", description: "Baked chicken thighs with brown rice and steamed vegetables", kcal: 650, protein_g: 42, carbs_g: 60, fat_g: 20 },
+          { meal: "Snack", description: "Cottage cheese with pineapple", kcal: 200, protein_g: 20, carbs_g: 20, fat_g: 5 }
         ]
       },
       { 
         day: "Saturday", 
         meals: [
-          { meal: "Breakfast", description: "Pancakes with syrup", kcal: 400, protein_g: 10, carbs_g: 60, fat_g: 15 },
-          { meal: "Lunch", description: "Burger with fries", kcal: 600, protein_g: 25, carbs_g: 55, fat_g: 30 },
-          { meal: "Dinner", description: "Pizza slice", kcal: 350, protein_g: 15, carbs_g: 40, fat_g: 18 }
+          { meal: "Breakfast", description: "Protein smoothie bowl with granola, berries, and chia seeds", kcal: 550, protein_g: 30, carbs_g: 65, fat_g: 15 },
+          { meal: "Lunch", description: "Grilled chicken sandwich on whole grain bread with side salad", kcal: 600, protein_g: 40, carbs_g: 55, fat_g: 20 },
+          { meal: "Dinner", description: "Lean steak with baked potato and roasted asparagus", kcal: 650, protein_g: 45, carbs_g: 50, fat_g: 25 },
+          { meal: "Snack", description: "Trail mix with dark chocolate", kcal: 200, protein_g: 8, carbs_g: 25, fat_g: 12 }
         ]
       },
       { 
         day: "Sunday", 
         meals: [
-          { meal: "Breakfast", description: "French toast", kcal: 380, protein_g: 12, carbs_g: 45, fat_g: 16 },
-          { meal: "Lunch", description: "Roast chicken", kcal: 450, protein_g: 35, carbs_g: 25, fat_g: 20 },
-          { meal: "Dinner", description: "Pasta with meatballs", kcal: 420, protein_g: 22, carbs_g: 40, fat_g: 18 }
+          { meal: "Breakfast", description: "French toast with eggs and turkey bacon", kcal: 550, protein_g: 28, carbs_g: 60, fat_g: 18 },
+          { meal: "Lunch", description: "Roast chicken with quinoa salad and mixed vegetables", kcal: 600, protein_g: 40, carbs_g: 55, fat_g: 20 },
+          { meal: "Dinner", description: "Baked salmon with whole grain pasta and vegetable medley", kcal: 600, protein_g: 38, carbs_g: 55, fat_g: 22 },
+          { meal: "Snack", description: "Greek yogurt with honey and walnuts", kcal: 250, protein_g: 20, carbs_g: 25, fat_g: 10 }
         ]
       }
     ]
@@ -635,15 +927,28 @@ function repairJson(jsonText: string): string {
   // Step 2: Fix double-quoted string values (the main issue you're seeing)
   console.log('Step 2: Fixing double-quoted string values...');
   repaired = repaired
-    // Fix the specific pattern: "day": ""Monday"" -> "day": "Monday"
-    .replace(/:\s*""([^"]*?)""/g, ': "$1"')
-    // Fix other double-quoted patterns
+    // Fix the specific pattern: "exercise": ""Bench Press"" -> "exercise": "Bench Press"
+    // More aggressive pattern to catch all double-quote issues
     .replace(/:\s*""([^"]*?)""/g, ': "$1"')
     // Fix triple quotes
     .replace(/:\s*"""([^"]*?)"""/g, ': "$1"')
-    // Fix mixed quote patterns
+    // Fix mixed quote patterns: "key": ""value"" or "key": "value""
     .replace(/:\s*"([^"]*?)""/g, ': "$1"')
-    .replace(/:\s*""([^"]*?)"/g, ': "$1"');
+    .replace(/:\s*""([^"]*?)"/g, ': "$1"')
+    // Fix double quotes inside property values - handle cases like "exercise": ""Bench Press""
+    .replace(/"([^"]+)":\s*""([^"]+?)""/g, '"$1": "$2"')
+    // Fix any remaining double quotes around string values
+    .replace(/:\s*""([^"]+?)""/g, ': "$1"');
+
+  // Step 2.5: Fix excessive number precision (e.g., 4.00000000000000000000000000000000000000000000000000000000000000000000 -> 4)
+  console.log('Step 2.5: Fixing excessive number precision...');
+  repaired = repaired
+    // Fix numbers with excessive decimal zeros: 4.00000000000000000000000000000000000000000000000000000000000000000000 -> 4
+    .replace(/:\s*(\d+)\.0+\s*([,}\]])/g, ': $1$2')
+    // Fix numbers that are clearly integers but have decimal precision
+    .replace(/:\s*(\d+)\.(0{10,})\s*([,}\]])/g, ': $1$3')
+    // Fix sets field specifically: "sets": 4.00000000000000000000000000000000000000000000000000000000000000000000 -> "sets": 4
+    .replace(/"sets":\s*(\d+)\.(0+)\s*([,}])/g, '"sets": $1$3');
 
   // Step 3: Fix malformed property values
   console.log('Step 3: Fixing malformed property values...');
@@ -775,10 +1080,16 @@ function parseJsonWithMultipleStrategies(jsonText: string): { success: boolean; 
       name: 'Double Quote Fix',
       fn: () => {
         const fixed = jsonText
+          // Fix double quotes in property values
           .replace(/:\s*""([^"]*?)""/g, ': "$1"')
           .replace(/:\s*"""([^"]*?)"""/g, ': "$1"')
           .replace(/:\s*"([^"]*?)""/g, ': "$1"')
-          .replace(/:\s*""([^"]*?)"/g, ': "$1"');
+          .replace(/:\s*""([^"]*?)"/g, ': "$1"')
+          .replace(/"([^"]+)":\s*""([^"]+?)""/g, '"$1": "$2"')
+          // Fix excessive number precision
+          .replace(/:\s*(\d+)\.(0{10,})\s*([,}\]])/g, ': $1$3')
+          .replace(/"sets":\s*(\d+)\.(0+)\s*([,}])/g, '"sets": $1$3')
+          .replace(/"kcal":\s*(\d+)\.(0+)\s*([,}])/g, '"kcal": $1$3');
         return JSON.parse(fixed);
       }
     },
@@ -798,7 +1109,14 @@ function parseJsonWithMultipleStrategies(jsonText: string): { success: boolean; 
         let aggressive = jsonText
           // Remove all error markers
           .replace(/\[[^\]]*\]/g, '')
-          // Fix double quotes
+          // Fix double quotes in property values FIRST
+          .replace(/:\s*""([^"]+?)""/g, ': "$1"')
+          .replace(/"([^"]+)":\s*""([^"]+?)""/g, '"$1": "$2"')
+          // Fix excessive number precision
+          .replace(/:\s*(\d+)\.(0{10,})\s*([,}\]])/g, ': $1$3')
+          .replace(/"sets":\s*(\d+)\.(0+)\s*([,}])/g, '"sets": $1$3')
+          .replace(/"kcal":\s*(\d+)\.(0+)\s*([,}])/g, '"kcal": $1$3')
+          // Fix remaining double quotes
           .replace(/""/g, '"')
           // Fix missing commas
           .replace(/}\s*{/g, '}, {')
@@ -860,6 +1178,16 @@ function preprocessGeminiResponse(text: string): string {
   processed = processed
     // Remove any markdown code block markers
     .replace(/```[a-z]*\n?|\n?```/g, '')
+    // CRITICAL: Fix double quotes in property values FIRST (e.g., "exercise": ""Bench Press"" -> "exercise": "Bench Press")
+    .replace(/:\s*""([^"]+?)""/g, ': "$1"')
+    .replace(/"([^"]+)":\s*""([^"]+?)""/g, '"$1": "$2"')
+    // CRITICAL: Fix excessive number precision (e.g., 4.00000000000000000000000000000000000000000000000000000000000000000000 -> 4)
+    .replace(/:\s*(\d+)\.(0{10,})\s*([,}\]])/g, ': $1$3')
+    .replace(/"sets":\s*(\d+)\.(0+)\s*([,}])/g, '"sets": $1$3')
+    .replace(/"kcal":\s*(\d+)\.(0+)\s*([,}])/g, '"kcal": $1$3')
+    .replace(/"protein_g":\s*(\d+)\.(0+)\s*([,}])/g, '"protein_g": $1$3')
+    .replace(/"carbs_g":\s*(\d+)\.(0+)\s*([,}])/g, '"carbs_g": $1$3')
+    .replace(/"fat_g":\s*(\d+)\.(0+)\s*([,}])/g, '"fat_g": $1$3')
     // Fix array formatting
     .replace(/"\s*\[\s*\[/g, '"[')
     .replace(/\]\s*\]"/g, ']')
@@ -880,6 +1208,89 @@ function preprocessGeminiResponse(text: string): string {
   
   console.log('Processed length:', processed.length);
   return processed;
+}
+
+/**
+ * Simplified API call for two-stage generation - returns raw JSON without complex parsing
+ */
+async function callGeminiAPISimple(prompt: string): Promise<any> {
+  const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY environment variable is not set')
+  }
+
+  const modelVersions = [
+    'gemini-2.0-flash',
+    'gemini-flash-latest',
+    'gemini-2.5-flash',
+  ];
+
+  for (const model of modelVersions) {
+    if (shouldSkipModel(model)) {
+      continue;
+    }
+    
+    try {
+      console.log(`Attempting simplified call to ${model}...`);
+      
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: prompt
+              }]
+            }],
+            generationConfig: {
+              temperature: 0.4,
+              topK: 40,
+              topP: 0.95,
+              maxOutputTokens: 8192,
+              response_mime_type: "application/json"
+            }
+          })
+        }
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.log(`${model} API error: ${response.status}`)
+        continue; // Try next model
+      }
+
+      const data = await response.json()
+      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+        console.log(`Invalid response from ${model}`)
+        continue;
+      }
+
+      const generatedText = data.candidates[0].content.parts[0].text;
+      console.log(`${model} generated simplified response successfully`);
+      
+      // Simple JSON parse - no complex repair needed for simple lists
+      try {
+        // Remove markdown code blocks if present
+        const cleaned = generatedText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+        recordSuccess(model);
+        return parsed;
+      } catch (parseError) {
+        console.log(`Failed to parse ${model} response:`, parseError instanceof Error ? parseError.message : 'Unknown error');
+        continue; // Try next model
+      }
+      
+    } catch (error) {
+      console.log(`Error with ${model}:`, error instanceof Error ? error.message : 'Unknown error');
+      continue; // Try next model
+    }
+  }
+
+  throw new Error('All Gemini models failed for simplified generation');
 }
 
 async function callGeminiAPI(prompt: string): Promise<GeminiResponse> {
@@ -936,10 +1347,76 @@ async function callGeminiAPI(prompt: string): Promise<GeminiResponse> {
                 }]
               }],
               generationConfig: {
-                temperature: 0.7,
+                temperature: 0.4,
                 topK: 40,
                 topP: 0.95,
-                maxOutputTokens: 8192, // Reduced from 32000 for faster generation
+                maxOutputTokens: 16384,
+                response_mime_type: "application/json",
+                response_schema: {
+                  type: "object",
+                  properties: {
+                    workout: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          day: { type: "string" },
+                          type: { type: "string" },
+                          routine: {
+                            type: "array",
+                            items: {
+                              type: "object",
+                              properties: {
+                                exercise: { type: "string" },
+                                sets: { type: "number" },
+                                reps: { type: "string" },
+                                rest: { type: "string" }
+                              },
+                              required: ["exercise"]
+                            }
+                          }
+                        },
+                        required: ["day", "routine"]
+                      }
+                    },
+                    diet: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          day: { type: "string" },
+                          meals: {
+                            type: "array",
+                            items: {
+                              type: "object",
+                              properties: {
+                                meal: { type: "string" },
+                                description: { type: "string" },
+                                kcal: { type: "number" },
+                                protein_g: { type: "number" },
+                                carbs_g: { type: "number" },
+                                fat_g: { type: "number" },
+                                ingredients: {
+                                  type: "array",
+                                  items: { type: "string" }
+                                },
+                                instructions: {
+                                  type: "array",
+                                  items: { type: "string" }
+                                },
+                                cooking_time: { type: "string" },
+                                serving_size: { type: "string" }
+                              },
+                              required: ["meal", "description", "kcal"]
+                            }
+                          }
+                        },
+                        required: ["day", "meals"]
+                      }
+                    }
+                  },
+                  required: ["workout", "diet"]
+                }
               }
             })
           }
@@ -1910,11 +2387,20 @@ serve(async (req) => {
       }
 
       if (planType === 'both') {
-        // Generate both workout and diet plans
-        const prompt = createGeminiPrompt(updatedUserData, 'both')
-      const geminiResponse = await callGeminiAPI(prompt)
-        finalWorkoutPlan = geminiResponse.workout
-        finalDietPlan = geminiResponse.diet
+        // OPTION 1: Two-stage generation - simplified prompt, code structures it
+        const simplifiedPrompt = createSimplifiedGeminiPrompt(updatedUserData, 'both')
+        try {
+          const simpleResponse = await callGeminiAPISimple(simplifiedPrompt)
+          const structuredResponse = structureSimplePlan(simpleResponse, updatedUserData)
+          finalWorkoutPlan = structuredResponse.workout
+          finalDietPlan = structuredResponse.diet
+        } catch (error) {
+          // If simplified generation fails, use fallback
+          console.log('Simplified generation failed, using fallback plan:', error instanceof Error ? error.message : 'Unknown error')
+          const fallback = createFallbackPlan()
+          finalWorkoutPlan = fallback.workout
+          finalDietPlan = fallback.diet
+        }
       } else {
         // Get existing plan data to preserve the part we're not regenerating
         const { data: existingPlan } = await supabase
@@ -1927,33 +2413,33 @@ serve(async (req) => {
           .single()
 
         if (planType === 'workout') {
-          // Generate only workout plan, keep existing diet plan
-          const prompt = createGeminiPrompt(updatedUserData, 'workout')
-          const geminiResponse = await callGeminiAPI(prompt)
-          finalWorkoutPlan = geminiResponse.workout
+          // OPTION 1: Two-stage generation for workout only
+          const simplifiedPrompt = createSimplifiedGeminiPrompt(updatedUserData, 'workout')
+          try {
+            const simpleResponse = await callGeminiAPISimple(simplifiedPrompt)
+            const structuredResponse = structureSimplePlan(simpleResponse, updatedUserData)
+            finalWorkoutPlan = structuredResponse.workout
           finalDietPlan = existingPlan?.diet_plan || []
-        } else if (planType === 'diet') {
-          // Generate only diet plan, keep existing workout plan
-          const prompt = createGeminiPrompt(updatedUserData, 'diet')
-          const geminiResponse = await callGeminiAPI(prompt)
-          
-          // Validate generated diet plan calories
-          if (geminiResponse.diet && Array.isArray(geminiResponse.diet)) {
-            geminiResponse.diet.forEach((day: any, index: number) => {
-              if (day.meals && Array.isArray(day.meals)) {
-                const dayCalories = day.meals.reduce((total: number, meal: any) => total + (meal.kcal || 0), 0)
-                const targetCalories = updatedUserData.target_calories
-                const difference = Math.abs(dayCalories - targetCalories)
-                
-                if (difference > 50) {
-                  // Calorie difference is significant but continue with plan
-                }
-              }
-            })
+          } catch (error) {
+            console.log('Simplified workout generation failed, using fallback:', error instanceof Error ? error.message : 'Unknown error')
+            const fallback = createFallbackPlan()
+            finalWorkoutPlan = fallback.workout
+            finalDietPlan = existingPlan?.diet_plan || []
           }
-          
+        } else if (planType === 'diet') {
+          // OPTION 1: Two-stage generation for diet only
+          const simplifiedPrompt = createSimplifiedGeminiPrompt(updatedUserData, 'diet')
+          try {
+            const simpleResponse = await callGeminiAPISimple(simplifiedPrompt)
+            const structuredResponse = structureSimplePlan(simpleResponse, updatedUserData)
+            finalWorkoutPlan = existingPlan?.workout_plan || []
+            finalDietPlan = structuredResponse.diet
+          } catch (error) {
+            console.log('Simplified diet generation failed, using fallback:', error instanceof Error ? error.message : 'Unknown error')
+            const fallback = createFallbackPlan()
           finalWorkoutPlan = existingPlan?.workout_plan || []
-          finalDietPlan = geminiResponse.diet
+            finalDietPlan = fallback.diet
+          }
         }
       }
 

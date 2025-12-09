@@ -91,18 +91,18 @@ class ConcurrentLLMProcessor {
 
   private rateLimits: RateLimits = {
     plan_generation: {
-      maxConcurrent: 12,       // 12 plan generations at once (increased from 3)
-      requestsPerMinute: 60,   // 60 plan generations per minute (increased from 20)
+      maxConcurrent: 1000,     // 1000 plan generations at once - ALL users process simultaneously, NO QUEUE WAITING
+      requestsPerMinute: 2000, // 2000 plan generations per minute - handles 1000+ users instantly
       processingTime: 50000    // 50 seconds per plan
     },
     coach_chat: {
-      maxConcurrent: 15,       // 15 chats at once
-      requestsPerMinute: 60,   // 60 chats per minute
+      maxConcurrent: 100,       // 100 chats at once (increased for better UX)
+      requestsPerMinute: 500,  // 500 chats per minute
       processingTime: 3000     // 3 seconds per chat
     },
     food_analysis: {
-      maxConcurrent: 8,        // 8 food analyses at once
-      requestsPerMinute: 40,   // 40 analyses per minute
+      maxConcurrent: 100,      // 100 food analyses at once (increased for better UX)
+      requestsPerMinute: 400,  // 400 analyses per minute
       processingTime: 15000    // 15 seconds per analysis
     }
   };
@@ -129,7 +129,7 @@ class ConcurrentLLMProcessor {
    * Initialize worker pools for each operation type
    */
   private initializeWorkerPools(): void {
-    // Plan Generation Workers (12 workers for high onboarding volume)
+    // Plan Generation Workers (1000 workers - ALL users process simultaneously, NO QUEUE WAITING)
     for (let i = 0; i < this.rateLimits.plan_generation.maxConcurrent; i++) {
       this.workerPools.plan_generation.push({
         id: `plan_worker_${i}`,
@@ -251,8 +251,8 @@ class ConcurrentLLMProcessor {
       this.globalRateLimits.lastMinuteReset = now;
     }
 
-    // Check if we're under the global limit (100 requests per minute)
-    return this.globalRateLimits.requestsThisMinute < 100;
+    // Check if we're under the global limit (2000 requests per minute - allows 1000+ users simultaneously)
+    return this.globalRateLimits.requestsThisMinute < 2000;
   }
 
   /**
@@ -266,15 +266,23 @@ class ConcurrentLLMProcessor {
   }
 
   /**
-   * Try to process a request immediately if workers are available
+   * Try to process requests immediately if workers are available
+   * Process MULTIPLE requests at once (not just one) for instant handling
    */
   private tryProcessRequest(type: ProcessingRequest['type']): void {
-    const availableWorker = this.workerPools[type].find(worker => !worker.busy);
-    
-    if (availableWorker && this.requestQueues[type].length > 0) {
+    // Process as many requests as we have available workers (no waiting)
+    while (this.requestQueues[type].length > 0) {
+      const availableWorker = this.workerPools[type].find(worker => !worker.busy);
+      
+      if (!availableWorker) {
+        // No available workers, stop trying
+        break;
+      }
+      
       const request = this.requestQueues[type].shift();
       if (request) {
         this.stats.queueLengths[type] = this.requestQueues[type].length;
+        // Process immediately without delay
         this.processRequest(availableWorker, request);
       }
     }
@@ -392,12 +400,13 @@ class ConcurrentLLMProcessor {
 
   /**
    * Start processing loops for each queue
+   * More frequent checks to process requests immediately (no delay)
    */
   private startProcessingLoops(): void {
-    // Start processing loops for each type
-    setInterval(() => this.tryProcessRequest('plan_generation'), 1000);
-    setInterval(() => this.tryProcessRequest('coach_chat'), 500);
-    setInterval(() => this.tryProcessRequest('food_analysis'), 1000);
+    // Start processing loops for each type - check more frequently for instant processing
+    setInterval(() => this.tryProcessRequest('plan_generation'), 100); // Check every 100ms for instant processing
+    setInterval(() => this.tryProcessRequest('coach_chat'), 100);
+    setInterval(() => this.tryProcessRequest('food_analysis'), 100);
   }
 
   /**

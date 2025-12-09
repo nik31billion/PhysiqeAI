@@ -185,20 +185,22 @@ const SubscriptionScreen: React.FC = () => {
                     )}
                   </View>
                 ) : !isProUser ? (
-                  <View style={styles.upgradePrompt}>
-                    <Text style={styles.upgradeText}>
-                      Upgrade to Pro for unlimited access to all features
-                    </Text>
-                    <TouchableOpacity style={styles.upgradeButton}>
-                      <LinearGradient
-                        colors={['#937AFD', '#b99bce']}
-                        style={styles.upgradeButtonGradient}
-                      >
-                        <Text style={styles.upgradeButtonText}>Upgrade Now</Text>
-                        <Ionicons name="arrow-forward" size={18} color="white" />
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
+                  // TODO: Re-enable when subscription functionality is ready
+                  // <View style={styles.upgradePrompt}>
+                  //   <Text style={styles.upgradeText}>
+                  //     Upgrade to Pro for unlimited access to all features
+                  //   </Text>
+                  //   <TouchableOpacity style={styles.upgradeButton}>
+                  //     <LinearGradient
+                  //       colors={['#937AFD', '#b99bce']}
+                  //       style={styles.upgradeButtonGradient}
+                  //     >
+                  //       <Text style={styles.upgradeButtonText}>Upgrade Now</Text>
+                  //       <Ionicons name="arrow-forward" size={18} color="white" />
+                  //     </LinearGradient>
+                  //   </TouchableOpacity>
+                  // </View>
+                  null
                 ) : null}
               </View>
 

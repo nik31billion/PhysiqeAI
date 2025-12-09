@@ -1,3 +1,55 @@
+// Initialize Sentry FIRST - before any other imports
+import { initSentry, captureException } from './utils/sentryConfig';
+initSentry();
+
+// Set up global error handlers AFTER Sentry is initialized
+// This catches errors that happen outside of React components
+if (typeof ErrorUtils !== 'undefined') {
+  const originalGlobalHandler = ErrorUtils.getGlobalHandler();
+  ErrorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
+    // Capture in Sentry
+    captureException(error, {
+      globalErrorHandler: {
+        isFatal: isFatal || false,
+        errorMessage: error.message,
+        errorStack: error.stack,
+      },
+    });
+    
+    // Call original handler if it exists
+    if (originalGlobalHandler) {
+      originalGlobalHandler(error, isFatal);
+    }
+  });
+}
+
+// Catch unhandled promise rejections
+if (typeof global !== 'undefined') {
+  const originalUnhandledRejection = global.onunhandledrejection;
+  global.onunhandledrejection = (event: PromiseRejectionEvent) => {
+    const error = event.reason instanceof Error 
+      ? event.reason 
+      : new Error(String(event.reason));
+    
+    // Capture in Sentry
+    captureException(error, {
+      unhandledRejection: {
+        reason: String(event.reason),
+        promise: event.promise?.toString(),
+      },
+    });
+    
+    // Call original handler if it exists
+    if (originalUnhandledRejection && typeof originalUnhandledRejection === 'function') {
+      try {
+        (originalUnhandledRejection as any)(event);
+      } catch (e) {
+        // Ignore errors in original handler
+      }
+    }
+  };
+}
+
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { AppNavigator } from './navigation';
@@ -6,6 +58,7 @@ import { OnboardingProvider } from './utils/OnboardingContext';
 import { NotificationProvider } from './utils/NotificationContext';
 import { RevenueCatProvider } from './utils/RevenueCatContext';
 import { PlanGenerationProvider } from './utils/PlanGenerationContext';
+import { AnalyticsProvider } from './utils/AnalyticsContext';
 import NotificationManager from './components/NotificationManager';
 import ProductionDebugger from './components/ProductionDebugger';
 
@@ -29,6 +82,15 @@ class ErrorBoundary extends React.Component<
     // Log detailed error information for debugging
     console.error('Error Stack:', error.stack);
     console.error('Error Info:', JSON.stringify(errorInfo, null, 2));
+    
+    // Capture error in Sentry with context
+    captureException(error, {
+      errorBoundary: {
+        componentStack: errorInfo.componentStack,
+        errorMessage: error.message,
+        errorStack: error.stack,
+      },
+    });
     
     // Store error for debugging (in production)
     if (!__DEV__) {
@@ -105,30 +167,33 @@ if (__DEV__) {
 export default function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <ErrorBoundary>
-          <RevenueCatProvider>
-            <ErrorBoundary>
-              <OnboardingProvider>
-                <ErrorBoundary>
-                  <PlanGenerationProvider>
-                    <ErrorBoundary>
-                      <NotificationProvider>
-                        <ErrorBoundary>
-                          <NotificationManager>
-                            <AppNavigator />
-                            <ProductionDebugger />
-                          </NotificationManager>
-                        </ErrorBoundary>
-                      </NotificationProvider>
-                    </ErrorBoundary>
-                  </PlanGenerationProvider>
-                </ErrorBoundary>
-              </OnboardingProvider>
-            </ErrorBoundary>
-          </RevenueCatProvider>
-        </ErrorBoundary>
-      </AuthProvider>
+      {/* Initialize Firebase Analytics first */}
+      <AnalyticsProvider>
+        <AuthProvider>
+          <ErrorBoundary>
+            <RevenueCatProvider>
+              <ErrorBoundary>
+                <OnboardingProvider>
+                  <ErrorBoundary>
+                    <PlanGenerationProvider>
+                      <ErrorBoundary>
+                        <NotificationProvider>
+                          <ErrorBoundary>
+                            <NotificationManager>
+                              <AppNavigator />
+                              <ProductionDebugger />
+                            </NotificationManager>
+                          </ErrorBoundary>
+                        </NotificationProvider>
+                      </ErrorBoundary>
+                    </PlanGenerationProvider>
+                  </ErrorBoundary>
+                </OnboardingProvider>
+              </ErrorBoundary>
+            </RevenueCatProvider>
+          </ErrorBoundary>
+        </AuthProvider>
+      </AnalyticsProvider>
     </ErrorBoundary>
   );
 }

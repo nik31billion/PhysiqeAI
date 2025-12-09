@@ -8,6 +8,7 @@ import FoodAnalysisLoadingScreen from '../components/FoodAnalysisLoadingScreen';
 import { geminiVisionService } from '../utils/geminiVisionService';
 import { addMultipleFoodsToDaily } from '../utils/dailyFoodIntakeService';
 import { useAuth } from '../utils/AuthContext';
+import { captureException, addBreadcrumb } from '../utils/sentryConfig';
 
 interface FoodScannerScreenProps {
   navigation: any;
@@ -46,6 +47,11 @@ const FoodScannerScreen: React.FC<FoodScannerScreenProps> = ({
 
   const handleImageCaptured = async (imageUri: string) => {
     console.log('Image captured for analysis:', imageUri);
+    addBreadcrumb('Image captured for food analysis', 'food_scanner_ui', { 
+      scanMode, 
+      imageUri: imageUri.substring(0, 50),
+    });
+    
     setCapturedImage(imageUri);
     setIsAnalyzing(true);
     // Show the beautiful loading screen immediately after capture
@@ -62,6 +68,27 @@ const FoodScannerScreen: React.FC<FoodScannerScreenProps> = ({
       setCurrentScreen('results');
     } catch (error) {
       console.error('Error analyzing food:', error);
+      
+      // Capture error in Sentry with UI context
+      if (error instanceof Error) {
+        captureException(error, {
+          foodScannerUI: {
+            operation: 'handleImageCaptured',
+            scanMode,
+            analysisMode: scanMode === 'library' ? 'food' : scanMode,
+            errorMessage: error.message,
+            screenState: 'analyzing',
+          },
+        });
+      } else {
+        captureException(new Error(String(error)), {
+          foodScannerUI: {
+            operation: 'handleImageCaptured',
+            scanMode,
+            errorType: 'unknown',
+          },
+        });
+      }
       
       // More specific error messages based on the error type
       let errorTitle = 'Analysis Failed';
@@ -147,11 +174,24 @@ const FoodScannerScreen: React.FC<FoodScannerScreenProps> = ({
 
   const handleConfirm = async (confirmedItems: FoodItem[]) => {
     if (!user?.id) {
+      const error = new Error('User not authenticated in food scanner');
+      captureException(error, {
+        foodScannerUI: {
+          operation: 'handleConfirm',
+          scanMode,
+          itemCount: confirmedItems.length,
+        },
+      });
       Alert.alert('Error', 'User not authenticated. Please log in again.');
       return;
     }
 
     setIsAddingToDaily(true);
+    addBreadcrumb('Adding food items to daily intake', 'food_scanner_ui', {
+      scanMode,
+      itemCount: confirmedItems.length,
+      userId: user.id,
+    });
 
     try {
       // Determine source based on scan mode
@@ -161,7 +201,18 @@ const FoodScannerScreen: React.FC<FoodScannerScreenProps> = ({
       const result = await addMultipleFoodsToDaily(user.id, confirmedItems, source);
 
       if (!result.success) {
-        throw new Error(result.error || 'Failed to add items to daily intake');
+        const error = new Error(result.error || 'Failed to add items to daily intake');
+        captureException(error, {
+          foodScannerUI: {
+            operation: 'handleConfirm',
+            scanMode,
+            itemCount: confirmedItems.length,
+            userId: user.id,
+            source,
+            apiError: result.error,
+          },
+        });
+        throw error;
       }
 
       const totalCalories = confirmedItems.reduce(
@@ -193,6 +244,29 @@ const FoodScannerScreen: React.FC<FoodScannerScreenProps> = ({
       
     } catch (error) {
       console.error('Error adding to daily intake:', error);
+      
+      // Capture error in Sentry
+      if (error instanceof Error) {
+        captureException(error, {
+          foodScannerUI: {
+            operation: 'handleConfirm',
+            scanMode,
+            itemCount: confirmedItems.length,
+            userId: user?.id,
+            errorMessage: error.message,
+          },
+        });
+      } else {
+        captureException(new Error(String(error)), {
+          foodScannerUI: {
+            operation: 'handleConfirm',
+            scanMode,
+            itemCount: confirmedItems.length,
+            errorType: 'unknown',
+          },
+        });
+      }
+      
       Alert.alert(
         'Error', 
         'Failed to add to daily intake. Please check your connection and try again.',

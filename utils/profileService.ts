@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { captureException, addBreadcrumb } from './sentryConfig';
 
 export interface UserProfile {
   id: string;
@@ -42,7 +43,6 @@ export interface UserProfile {
   privacy_settings: any;
   additional_notes: string;
   selected_plan: string;
-  coupon_code: string;
   
   // Profile Picture
   profile_picture: string;
@@ -83,6 +83,7 @@ export interface UserPlan {
  */
 export const fetchUserProfile = async (userId: string): Promise<UserProfile | null> => {
   try {
+    addBreadcrumb('Fetching user profile', 'profile', { userId });
     const { data, error } = await supabase
       .from('user_profiles')
       .select('*')
@@ -90,13 +91,28 @@ export const fetchUserProfile = async (userId: string): Promise<UserProfile | nu
       .single();
 
     if (error) {
-      
+      if (error.code !== 'PGRST116') { // PGRST116 = no rows found, which is OK
+        captureException(new Error(`Failed to fetch user profile: ${error.message}`), {
+          profile: {
+            operation: 'fetchUserProfile',
+            userId,
+            errorCode: error.code,
+            errorMessage: error.message,
+          },
+        });
+      }
       return null;
     }
 
     return data;
   } catch (error) {
-    
+    captureException(error instanceof Error ? error : new Error(String(error)), {
+      profile: {
+        operation: 'fetchUserProfile',
+        userId,
+        errorType: 'exception',
+      },
+    });
     return null;
   }
 };

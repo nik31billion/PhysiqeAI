@@ -26,8 +26,7 @@ const OnboardingScreen21: React.FC = () => {
   const navigation = useNavigation();
   const { navigateToNextStep, isSaving, error } = useOnboardingNavigation();
   const { offerings, fetchOfferings, loading: rcLoading, customerInfo } = useRevenueCat();
-  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('monthly');
-  const [couponCode, setCouponCode] = useState('');
+  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual' | 'yearly-auto'>('monthly');
   const [showValidationError, setShowValidationError] = useState(false);
   const [offeringsError, setOfferingsError] = useState<string | null>(null);
   const [purchasing, setPurchasing] = useState(false);
@@ -116,16 +115,35 @@ const OnboardingScreen21: React.FC = () => {
     return offerings.current.annual;
   };
 
+  // Helper function to get yearly package with free trial from offerings
+  const getYearlyAutoPackage = () => {
+    // Use the existing annual package which now has the free trial
+    return getAnnualPackage();
+  };
+
   // Helper function to format price
   const formatPrice = (packageItem: any) => {
     if (!packageItem?.product?.priceString) return 'Loading...';
     return packageItem.product.priceString;
   };
 
+  // Helper function to get button text based on selected plan
+  const getButtonText = () => {
+    if (selectedPlan === 'yearly-auto') {
+      return 'Get your 7-day free trial';
+    } else if (selectedPlan === 'monthly') {
+      return `Subscribe for ${getSelectedPackage() ? formatPrice(getSelectedPackage()) : '₹300.00'}`;
+    } else if (selectedPlan === 'annual') {
+      return `Subscribe for ${getSelectedPackage() ? formatPrice(getSelectedPackage()) : '₹2000.00'}`;
+    }
+    return 'Subscribe for ₹300.00';
+  };
+
   // Helper function to get package identifier for selected plan
   const getSelectedPackage = () => {
     if (selectedPlan === 'monthly') return getMonthlyPackage();
     if (selectedPlan === 'annual') return getAnnualPackage();
+    if (selectedPlan === 'yearly-auto') return getYearlyAutoPackage();
     return null;
   };
 
@@ -162,7 +180,6 @@ const OnboardingScreen21: React.FC = () => {
         // Save the purchase info and continue onboarding
         const stepData = {
           selected_plan: selectedPlan,
-          coupon_code: couponCode || undefined,
           purchase_successful: true,
           product_identifier: productIdentifier,
           revenue_cat_user_id: customerInfo.originalAppUserId,
@@ -334,45 +351,38 @@ const OnboardingScreen21: React.FC = () => {
               <Text style={styles.planSubtitle}>Pay monthly, cancel anytime</Text>
             </TouchableOpacity>
 
-            {/* Annual Plan */}
+            {/* Annual Plan with Free Trial */}
             <TouchableOpacity
               style={[
                 styles.planCard,
-                selectedPlan === 'annual' && styles.planCardSelected,
-                !getAnnualPackage() && styles.planCardDisabled
+                selectedPlan === 'yearly-auto' && styles.planCardSelected,
+                !getYearlyAutoPackage() && styles.planCardDisabled
               ]}
-              onPress={() => getAnnualPackage() && setSelectedPlan('annual')}
-              disabled={!getAnnualPackage()}
+              onPress={() => getYearlyAutoPackage() && setSelectedPlan('yearly-auto')}
+              disabled={!getYearlyAutoPackage()}
             >
               <Animated.View 
                 style={[
                   styles.planCardGlow,
-                  selectedPlan === 'annual' && styles.planCardGlowSelected,
-                  { opacity: selectedPlan === 'annual' ? glowOpacity : 0.3 }
+                  selectedPlan === 'yearly-auto' && styles.planCardGlowSelected,
+                  { opacity: selectedPlan === 'yearly-auto' ? glowOpacity : 0.3 }
                 ]}
               />
               <View style={styles.saveTag}>
                 <Text style={styles.saveTagText}>Best Value</Text>
               </View>
+              <View style={styles.freeTrialBadge}>
+                <Text style={styles.freeTrialText}>7-Day Free Trial</Text>
+              </View>
               <Text style={styles.planPrice}>
-                {getAnnualPackage() ? formatPrice(getAnnualPackage()) : 'Not Available'}
+                {getYearlyAutoPackage() ? formatPrice(getYearlyAutoPackage()) : 'Not Available'}
               </Text>
-              <Text style={styles.planSubtitle}>Best value—unlock a full year for less</Text>
+              <Text style={styles.planSubtitle}>Free for 7 days, then yearly billing</Text>
+              <Text style={styles.trialNote}>Payment method required • No charge during trial</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Coupon Code */}
-        <View style={styles.couponContainer}>
-          <Text style={styles.couponLabel}>Coupon Code</Text>
-          <TextInput
-            style={styles.couponInput}
-            value={couponCode}
-            onChangeText={setCouponCode}
-            placeholder="Enter code"
-            placeholderTextColor="#999"
-          />
-        </View>
 
         {/* Payment Methods */}
         <View style={styles.paymentMethods}>
@@ -418,7 +428,7 @@ const OnboardingScreen21: React.FC = () => {
                 </View>
               ) : (
                 <Text style={styles.continueButtonText}>
-                  Subscribe for {getSelectedPackage() ? formatPrice(getSelectedPackage()) : '₹300.00'}
+                  {getButtonText()}
                 </Text>
               )}
             </LinearGradient>
@@ -624,6 +634,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  freeTrialBadge: {
+    position: 'absolute',
+    top: -8,
+    left: -8,
+    backgroundColor: '#FF6B35',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  freeTrialText: {
+    color: 'white',
+    fontSize: 11,
+    fontWeight: '600',
+  },
   planPrice: {
     fontSize: 18,
     fontWeight: '800',
@@ -636,26 +660,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 14,
   },
-  couponContainer: {
-    width: '100%',
-    marginBottom: 15,
-    alignItems: 'center',
-  },
-  couponLabel: {
-    fontSize: 14,
-    color: '#333',
+  trialNote: {
+    fontSize: 10,
+    color: '#4CAF50',
+    textAlign: 'center',
+    marginTop: 4,
     fontWeight: '500',
-    marginBottom: 6,
-  },
-  couponInput: {
-    width: '100%',
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 10,
-    padding: 10,
-    fontSize: 14,
-    color: '#333',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
   },
   paymentMethods: {
     flexDirection: 'row',

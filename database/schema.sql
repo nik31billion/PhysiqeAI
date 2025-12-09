@@ -45,7 +45,6 @@ CREATE TABLE IF NOT EXISTS user_profiles (
   privacy_settings JSONB,
   additional_notes TEXT,
   selected_plan TEXT, -- selected subscription plan
-  coupon_code TEXT, -- coupon code for discounts
   purchase_successful BOOLEAN DEFAULT FALSE, -- whether purchase completed successfully
   product_identifier TEXT, -- RevenueCat product identifier
   revenue_cat_user_id TEXT, -- RevenueCat customer ID

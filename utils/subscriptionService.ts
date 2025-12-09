@@ -35,9 +35,16 @@ export const extractSubscriptionInfo = (customerInfo: CustomerInfo | null): Subs
   console.log('🔍 extractSubscriptionInfo - productPlanId:', productPlanId);
   console.log('🔍 extractSubscriptionInfo - mainEntitlement:', JSON.stringify(mainEntitlement, null, 2));
   
-  // Check both productIdentifier and productPlanIdentifier for yearly/annual
-  const isPrepaidSubscription = productId.toLowerCase().includes('yearly') || productId.toLowerCase().includes('annual') ||
-                               productPlanId.toLowerCase().includes('yearly') || productPlanId.toLowerCase().includes('annual');
+  // Check if this is the new auto-renewing yearly plan with free trial
+  const isNewYearlyAutoPlan = productId.toLowerCase().includes('yearly-auto') || 
+                              productPlanId.toLowerCase().includes('yearly-auto');
+  
+  // Check if this is the old prepaid yearly plan
+  const isOldPrepaidYearly = (productId.toLowerCase().includes('yearly') || productId.toLowerCase().includes('annual') ||
+                             productPlanId.toLowerCase().includes('yearly') || productPlanId.toLowerCase().includes('annual')) &&
+                             !isNewYearlyAutoPlan;
+  
+  const isPrepaidSubscription = isOldPrepaidYearly;
   
   // For billing period, we need to use the full product identifier that includes the plan
   // The productPlanId alone (like "default") doesn't contain the billing period info
@@ -49,7 +56,7 @@ export const extractSubscriptionInfo = (customerInfo: CustomerInfo | null): Subs
   
   return {
     productId: productId,
-    title: getSubscriptionTitle(productPlanId), // Use productPlanId for title
+    title: getSubscriptionTitle(fullProductId), // Use full product ID for title to detect yearly-auto
     status: getSubscriptionStatus(mainEntitlement),
     renewalDate: mainEntitlement.expirationDate ? new Date(mainEntitlement.expirationDate) : null,
     purchaseDate: mainEntitlement.latestPurchaseDate ? new Date(mainEntitlement.latestPurchaseDate) : null,
@@ -72,6 +79,10 @@ export const getSubscriptionTitle = (productId: string): string => {
   // Check for yearly FIRST (before monthly) to avoid false matches
   // Handle cases like "flexaura_monthly:flexaura-yearly" where yearly is at the end
   if (lowercaseId.includes('yearly') || lowercaseId.includes('annual')) {
+    // Check if it's the new auto-renewing yearly plan with free trial
+    if (lowercaseId.includes('yearly-auto')) {
+      return 'Flex Aura Pro (Yearly with Free Trial)';
+    }
     return 'Flex Aura Pro (Yearly)';
   }
   // Check for monthly - either in the full ID or in the base product part (before colon)

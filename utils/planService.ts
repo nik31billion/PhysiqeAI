@@ -3,6 +3,7 @@
  */
 
 import { supabase } from './supabase'
+import { captureException, addBreadcrumb, startTransaction } from './sentryConfig'
 
 export interface WorkoutRoutine {
   exercise: string
@@ -98,22 +99,101 @@ export async function getDailyPlan(userId: string): Promise<DietPlan | null> {
  * @returns Promise resolving to plan generation response
  */
 export async function generatePlanViaEdgeFunction(inputs: PlanGenerationInputs): Promise<PlanGenerationResponse> {
+  const transaction = startTransaction('plan_generation', 'api.call');
+  const startTime = Date.now();
+  
   try {
+    addBreadcrumb('Starting plan generation', 'plan_service', {
+      userId: inputs.userId,
+      regenerate: inputs.regenerate || false,
+      planType: inputs.planType || 'both',
+    });
+    
+    transaction.setTag('plan_type', inputs.planType || 'both');
+    transaction.setTag('regenerate', String(inputs.regenerate || false));
+    transaction.setData('user_id', inputs.userId);
+    
+    // Track the API call performance
+    const apiCallSpan = transaction.startChild('supabase_edge_function', 'http.client');
     const { data, error } = await supabase.functions.invoke('generate-plans', {
       body: inputs
     });
 
+    // Finish API call span
+    apiCallSpan.setTag('status', error ? 'error' : 'success');
+    if (error) {
+      apiCallSpan.setTag('error', 'true');
+      apiCallSpan.setData('error_message', error.message);
+      apiCallSpan.setData('error_code', String(error.status || 'unknown'));
+    }
+    apiCallSpan.finish();
 
     if (error) {
-      throw new Error(`Edge function error: ${error.message}`);
+      const apiError = new Error(`Edge function error: ${error.message}`);
+      captureException(apiError, {
+        planGeneration: {
+          operation: 'generatePlanViaEdgeFunction',
+          userId: inputs.userId,
+          regenerate: inputs.regenerate || false,
+          planType: inputs.planType || 'both',
+          supabaseError: error.message,
+          errorCode: error.status || 'unknown',
+        },
+      });
+      transaction.setTag('error', 'true');
+      transaction.finish();
+      throw apiError;
     }
 
     if (!data) {
-      throw new Error('No data returned from plan generation');
+      const error = new Error('No data returned from plan generation');
+      captureException(error, {
+        planGeneration: {
+          operation: 'generatePlanViaEdgeFunction',
+          userId: inputs.userId,
+          regenerate: inputs.regenerate || false,
+          planType: inputs.planType || 'both',
+        },
+      });
+      transaction.setTag('error', 'true');
+      transaction.finish();
+      throw error;
     }
 
-    return data as PlanGenerationResponse;
+    const duration = Date.now() - startTime;
+    const response = data as PlanGenerationResponse;
+    
+    if (!response.success) {
+      const error = new Error(response.error || 'Plan generation failed');
+      captureException(error, {
+        planGeneration: {
+          operation: 'generatePlanViaEdgeFunction',
+          userId: inputs.userId,
+          regenerate: inputs.regenerate || false,
+          planType: inputs.planType || 'both',
+          apiError: response.error,
+        },
+      });
+      transaction.setTag('error', 'true');
+    } else {
+      addBreadcrumb('Plan generation completed', 'plan_service', {
+        userId: inputs.userId,
+        planId: response.planId,
+        duration,
+      });
+      transaction.setTag('success', 'true');
+    }
+    
+    transaction.setData('duration_ms', duration);
+    transaction.setData('plan_generated', !!response);
+    transaction.finish();
+    
+    return response;
   } catch (error) {
+    const duration = Date.now() - startTime;
+    transaction.setTag('error', 'true');
+    transaction.setData('duration', duration);
+    transaction.finish();
     throw error;
   }
 }
@@ -124,15 +204,52 @@ export async function generatePlanViaEdgeFunction(inputs: PlanGenerationInputs):
  * @returns Promise resolving to plan generation response
  */
 export async function generatePlanConcurrently(inputs: PlanGenerationInputs): Promise<PlanGenerationResponse> {
-  const { concurrentLLMProcessor } = await import('./concurrentLLMProcessor');
+  const transaction = startTransaction('plan_generation_concurrent', 'api.call');
+  const startTime = Date.now();
   
-  console.log(`[PlanService] Adding plan generation request to concurrent processor for user ${inputs.userId}`);
-  
-  return await concurrentLLMProcessor.addRequest(
-    inputs.userId,
-    'plan_generation',
-    inputs
-  );
+  try {
+    addBreadcrumb('Starting concurrent plan generation', 'plan_service', {
+      userId: inputs.userId,
+      regenerate: inputs.regenerate || false,
+      planType: inputs.planType || 'both',
+    });
+    
+    const { concurrentLLMProcessor } = await import('./concurrentLLMProcessor');
+    
+    console.log(`[PlanService] Adding plan generation request to concurrent processor for user ${inputs.userId}`);
+    
+    const result = await concurrentLLMProcessor.addRequest(
+      inputs.userId,
+      'plan_generation',
+      inputs
+    );
+    
+    const duration = Date.now() - startTime;
+    transaction.setTag('success', result.success.toString());
+    transaction.setData('duration', duration);
+    transaction.finish();
+    
+    return result;
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    transaction.setTag('error', 'true');
+    transaction.setData('duration', duration);
+    transaction.finish();
+    
+    if (error instanceof Error) {
+      captureException(error, {
+        planGeneration: {
+          operation: 'generatePlanConcurrently',
+          userId: inputs.userId,
+          regenerate: inputs.regenerate || false,
+          planType: inputs.planType || 'both',
+          errorMessage: error.message,
+        },
+      });
+    }
+    
+    throw error;
+  }
 }
 
 /**
@@ -145,6 +262,8 @@ export async function getUserActivePlan(userId: string): Promise<StoredPlan | nu
     // First, let's fix the database by ensuring only one plan is active
     await fixMultipleActivePlans(userId);
     
+    addBreadcrumb('Fetching user active plan', 'plan_service', { userId });
+    
     const { data, error } = await supabase
       .from('user_plans')
       .select('*')
@@ -155,13 +274,21 @@ export async function getUserActivePlan(userId: string): Promise<StoredPlan | nu
       .limit(1)
       .single()
 
-
     if (error) {
       if (error.code === 'PGRST116') {
-        // No active plan found
+        // No active plan found - this is not an error
         return null
       }
-      throw new Error(`Database error: ${error.message}`)
+      const dbError = new Error(`Database error: ${error.message}`);
+      captureException(dbError, {
+        planService: {
+          operation: 'getUserActivePlan',
+          userId,
+          errorCode: error.code,
+          errorMessage: error.message,
+        },
+      });
+      throw dbError;
     }
 
     return data as StoredPlan

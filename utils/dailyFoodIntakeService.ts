@@ -40,13 +40,24 @@ export async function addFoodToDaily(
 ): Promise<{ success: boolean; data?: DailyFoodIntakeEntry; error?: string }> {
   try {
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const calories = Math.round(foodItem.nutrition.calories);
+    
+    // Optimistic update: Add calories to store immediately
+    try {
+      const { useCaloriesStore } = await import('./stores/caloriesStore');
+      const store = useCaloriesStore.getState();
+      await store.addScannerCalories(calories, userId, today);
+    } catch (storeError) {
+      // Silently fail if store not available - backward compatibility
+      console.log('Store update skipped:', storeError);
+    }
     
     const foodEntry: Omit<DailyFoodIntakeEntry, 'id' | 'created_at' | 'updated_at'> = {
       user_id: userId,
       date: today,
       food_name: foodItem.name,
       quantity: foodItem.quantity,
-      calories: Math.round(foodItem.nutrition.calories),
+      calories: calories,
       protein_g: Math.round(foodItem.nutrition.protein * 10) / 10, // 1 decimal place
       carbs_g: Math.round(foodItem.nutrition.carbs * 10) / 10, // 1 decimal place
       fat_g: Math.round(foodItem.nutrition.fat * 10) / 10, // 1 decimal place
@@ -58,6 +69,13 @@ export async function addFoodToDaily(
       meal_type: mealType,
     };
 
+    addBreadcrumb('Adding food to daily intake', 'food_intake', { 
+      userId, 
+      foodName: foodItem.name,
+      source,
+      mealType,
+    });
+    
     const { data, error } = await supabase
       .from('daily_food_intake')
       .insert([foodEntry])
@@ -66,6 +84,16 @@ export async function addFoodToDaily(
 
     if (error) {
       console.error('Error adding food to daily intake:', error);
+      captureException(new Error(`Failed to add food to daily intake: ${error.message}`), {
+        foodIntake: {
+          operation: 'addFoodToDaily',
+          userId,
+          foodName: foodItem.name,
+          source,
+          errorCode: error.code,
+          errorMessage: error.message,
+        },
+      });
       return { success: false, error: error.message };
     }
 
@@ -73,6 +101,13 @@ export async function addFoodToDaily(
     return { success: true, data };
   } catch (error) {
     console.error('Error in addFoodToDaily:', error);
+    captureException(error instanceof Error ? error : new Error(String(error)), {
+      foodIntake: {
+        operation: 'addFoodToDaily',
+        userId,
+        errorType: 'exception',
+      },
+    });
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Unknown error' 
@@ -91,6 +126,22 @@ export async function addMultipleFoodsToDaily(
 ): Promise<{ success: boolean; data?: DailyFoodIntakeEntry[]; error?: string }> {
   try {
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    
+    // Calculate total calories for optimistic update
+    const totalCalories = foodItems.reduce(
+      (total, item) => total + Math.round(item.nutrition.calories),
+      0
+    );
+    
+    // Optimistic update: Add calories to store immediately
+    try {
+      const { useCaloriesStore } = await import('./stores/caloriesStore');
+      const store = useCaloriesStore.getState();
+      await store.addScannerCalories(totalCalories, userId, today);
+    } catch (storeError) {
+      // Silently fail if store not available - backward compatibility
+      console.log('Store update skipped:', storeError);
+    }
     
     const foodEntries: Omit<DailyFoodIntakeEntry, 'id' | 'created_at' | 'updated_at'>[] = 
       foodItems.map(foodItem => ({

@@ -34,6 +34,7 @@ import {
   clearDailyCompletionCache
 } from '../utils/instantDataManager';
 import { useInstantStoredPlan, useInstantCompletionStats, useInstantAuraSummary, useInstantUserProfile } from '../utils/useInstantData';
+import { useAuraStore, useCaloriesStore } from '../utils/stores';
 import { supabase } from '../utils/supabase';
 import { getUserDisplayName } from '../utils/profileService';
 import {
@@ -50,6 +51,7 @@ import {
 } from '../utils/completionService';
 import { useRoute } from '@react-navigation/native';
 import { saveRecipe, isRecipeSaved, getSavedRecipes, removeSavedRecipe } from '../utils/savedRecipesService';
+import { captureException, addBreadcrumb } from '../utils/sentryConfig';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -63,6 +65,10 @@ const PlanScreen: React.FC = () => {
   const { stats } = useInstantCompletionStats(user?.id || null);
   const { auraSummary: instantAuraSummary, loading: instantAuraLoading } = useInstantAuraSummary(user?.id || null);
   const { profile: userProfile } = useInstantUserProfile(user?.id || null);
+  
+  // Use Zustand store for instant aura updates
+  const auraSummary = useAuraStore((state) => state.auraSummary);
+  const instantAura = auraSummary || instantAuraSummary; // Use store if available, fallback to instant hook
   const [completedDays, setCompletedDays] = useState<Set<string>>(new Set());
   const [expandedMeal, setExpandedMeal] = useState<number | null>(null);
   const [completedMeals, setCompletedMeals] = useState<Set<number>>(new Set());
@@ -152,6 +158,13 @@ const PlanScreen: React.FC = () => {
       }
       setSavedRecipes(savedSet);
     } catch (error) {
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        planScreen: {
+          operation: 'checkSavedRecipes',
+          userId: user?.id,
+          errorType: 'exception',
+        },
+      });
     }
   };
 
@@ -173,6 +186,13 @@ const PlanScreen: React.FC = () => {
         setSavedRecipes(new Set());
       }
     } catch (error) {
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        planScreen: {
+          operation: 'loadSavedRecipes',
+          userId: user?.id,
+          errorType: 'exception',
+        },
+      });
       setSavedRecipesList([]);
       setSavedRecipes(new Set());
     } finally {
@@ -227,6 +247,7 @@ const PlanScreen: React.FC = () => {
   const fetchCompletedDays = async () => {
     if (!user) return;
     try {
+      addBreadcrumb('Fetching completed days', 'plan_screen', { userId: user.id });
       const { data, error } = await supabase
         .from('day_completions')
         .select('completed_date')
@@ -234,18 +255,39 @@ const PlanScreen: React.FC = () => {
         .eq('is_active', true);
 
       if (error) {
+        captureException(new Error(`Failed to fetch completed days: ${error.message}`), {
+          planScreen: {
+            operation: 'fetchCompletedDays',
+            userId: user.id,
+            errorCode: error.code,
+            errorMessage: error.message,
+          },
+        });
         return;
       }
 
       const completedDates = new Set(data?.map(item => item.completed_date) || []);
       setCompletedDays(completedDates);
     } catch (error) {
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        planScreen: {
+          operation: 'fetchCompletedDays',
+          userId: user?.id,
+          errorType: 'exception',
+        },
+      });
     }
   };
 
   const fetchIndividualCompletions = async (targetDate?: string) => {
     if (!user) return;
     try {
+      addBreadcrumb('Fetching individual completions', 'plan_screen', { 
+        userId: user.id, 
+        targetDate,
+        selectedDay,
+      });
+      
       // Use provided date or calculate based on selected day
       let completionDate: string;
       
@@ -281,6 +323,28 @@ const PlanScreen: React.FC = () => {
         getCompletedMeals(user.id, completionDate),
         getCompletedExercises(user.id, completionDate)
       ]);
+
+      if (!mealsResult.success && mealsResult.error) {
+        captureException(new Error(`Failed to fetch completed meals: ${mealsResult.error}`), {
+          planScreen: {
+            operation: 'fetchIndividualCompletions',
+            userId: user.id,
+            completionDate,
+            subOperation: 'getCompletedMeals',
+          },
+        });
+      }
+
+      if (!exercisesResult.success && exercisesResult.error) {
+        captureException(new Error(`Failed to fetch completed exercises: ${exercisesResult.error}`), {
+          planScreen: {
+            operation: 'fetchIndividualCompletions',
+            userId: user.id,
+            completionDate,
+            subOperation: 'getCompletedExercises',
+          },
+        });
+      }
 
       if (mealsResult.success && mealsResult.data) {
         const mealIndices = new Set(mealsResult.data.map(completion => completion.meal_index));
@@ -399,13 +463,46 @@ const PlanScreen: React.FC = () => {
         completionDate = new Date().toISOString().split('T')[0];
       }
       
+      // Get meal calories for optimistic update - improved extraction
+      let mealCalories = 0;
+      if (meals && meals[mealIndex]) {
+        const meal = meals[mealIndex];
+        // Try multiple ways to get calories
+        mealCalories = meal.kcal || 0;
+        
+        // If no kcal field, try to extract from description
+        if (mealCalories === 0 && meal.description) {
+          // Try various patterns: "400 kcal", "400kcal", "400 calories", etc.
+          const patterns = [
+            /(\d+)\s*kcal/i,
+            /(\d+)\s*calories/i,
+            /(\d+)\s*cal/i,
+            /kcal[:\s]*(\d+)/i,
+            /calories[:\s]*(\d+)/i,
+          ];
+          
+          for (const pattern of patterns) {
+            const match = meal.description.match(pattern);
+            if (match) {
+              mealCalories = parseInt(match[1], 10);
+              if (mealCalories > 0) break;
+            }
+          }
+        }
+        
+        // Log warning if calories are still 0 (for debugging)
+        if (mealCalories === 0) {
+          console.warn(`Meal ${mealIndex} (${mealName}) has 0 calories - will still mark as completed`);
+        }
+      }
       
       const result = await markMealAsCompleted(
         user.id,
         plan.id,
         mealIndex,
         mealName,
-        completionDate
+        completionDate,
+        mealCalories // Pass calories for optimistic update
       );
 
       if (result.success) {
@@ -419,9 +516,29 @@ const PlanScreen: React.FC = () => {
           checkAndCompleteDay();
         }, 100);
       } else {
+        const error = new Error(result.error || 'Failed to mark meal as completed');
+        captureException(error, {
+          planScreen: {
+            operation: 'handleMealCompletion',
+            userId: user?.id,
+            mealIndex,
+            mealName,
+            planId: plan?.id,
+            apiError: result.error,
+          },
+        });
         Alert.alert('Error', result.error || 'Failed to mark meal as completed');
       }
     } catch (error) {
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        planScreen: {
+          operation: 'handleMealCompletion',
+          userId: user?.id,
+          mealIndex,
+          mealName,
+          errorType: 'exception',
+        },
+      });
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsCompletingMeal(null);
@@ -478,9 +595,29 @@ const PlanScreen: React.FC = () => {
           checkAndCompleteDay();
         }, 100);
       } else {
+        const error = new Error(result.error || 'Failed to mark exercise as completed');
+        captureException(error, {
+          planScreen: {
+            operation: 'handleExerciseCompletion',
+            userId: user?.id,
+            exerciseIndex,
+            exerciseName,
+            planId: plan?.id,
+            apiError: result.error,
+          },
+        });
         Alert.alert('Error', result.error || 'Failed to mark exercise as completed');
       }
     } catch (error) {
+      captureException(error instanceof Error ? error : new Error(String(error)), {
+        planScreen: {
+          operation: 'handleExerciseCompletion',
+          userId: user?.id,
+          exerciseIndex,
+          exerciseName,
+          errorType: 'exception',
+        },
+      });
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsCompletingExercise(null);
@@ -531,8 +668,79 @@ const PlanScreen: React.FC = () => {
       // Calculate remaining uncompleted meals
       const remainingMealsCount = allMealIndices.size - completedMeals.size;
       
+      // Calculate total calories for remaining meals to update calories store
+      let remainingMealsCalories = 0;
+      const remainingMealIndices: number[] = [];
+      
+      if (meals) {
+        meals.forEach((meal: any, index: number) => {
+          if (!completedMeals.has(index)) {
+            remainingMealIndices.push(index);
+            // Extract calories from meal
+            let mealCalories = meal.kcal || 0;
+            if (mealCalories === 0 && meal.description) {
+              // Try various patterns to extract calories
+              const patterns = [
+                /(\d+)\s*kcal/i,
+                /(\d+)\s*calories/i,
+                /(\d+)\s*cal/i,
+                /kcal[:\s]*(\d+)/i,
+                /calories[:\s]*(\d+)/i,
+              ];
+              
+              for (const pattern of patterns) {
+                const match = meal.description.match(pattern);
+                if (match) {
+                  mealCalories = parseInt(match[1], 10);
+                  if (mealCalories > 0) break;
+                }
+              }
+            }
+            remainingMealsCalories += mealCalories;
+          }
+        });
+      }
+      
       // INSTANT UI UPDATE - Update state immediately for zero delays!
       setCompletedMeals(allMealIndices);
+      
+      // Update calories store optimistically for all remaining meals
+      // This ensures HomeScreen shows updated calories immediately
+      try {
+        const caloriesStore = useCaloriesStore.getState();
+        
+        // Add each remaining meal to the store
+        for (const mealIndex of remainingMealIndices) {
+          const meal = meals?.[mealIndex];
+          if (meal) {
+            let mealCalories = meal.kcal || 0;
+            if (mealCalories === 0 && meal.description) {
+              // Try various patterns to extract calories
+              const patterns = [
+                /(\d+)\s*kcal/i,
+                /(\d+)\s*calories/i,
+                /(\d+)\s*cal/i,
+                /kcal[:\s]*(\d+)/i,
+                /calories[:\s]*(\d+)/i,
+              ];
+              
+              for (const pattern of patterns) {
+                const match = meal.description.match(pattern);
+                if (match) {
+                  mealCalories = parseInt(match[1], 10);
+                  if (mealCalories > 0) break;
+                }
+              }
+            }
+            
+            // Add meal completion to store (will skip if already completed)
+            // This updates consumedCalories immediately
+            await caloriesStore.addMealCompletion(mealIndex, mealCalories, user.id, completionDate);
+          }
+        }
+      } catch (storeError) {
+        console.error('Error updating calories store for bulk meal completion:', storeError);
+      }
       
       // Update instant state immediately - zero delays! Only for remaining meals
       instantBulkMealCompletion(user.id, plan.id, remainingMealsCount);
@@ -1174,10 +1382,10 @@ const PlanScreen: React.FC = () => {
                   Here's your custom plan
                 </Text>
                 {/* Display instant aura if available */}
-                {instantAuraSummary && instantAuraSummary.total_aura > 0 && (
+                {instantAura && instantAura.total_aura > 0 && (
                   <View style={styles.auraMinibar}>
                     <Text style={styles.auraMinibarText}>
-                      ✨ Aura: {instantAuraSummary.total_aura}
+                      ✨ Aura: {instantAura.total_aura}
                     </Text>
                   </View>
                 )}

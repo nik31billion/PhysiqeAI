@@ -1,0 +1,57 @@
+name: iOS Production Build (Simple)
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  build-ios:
+    name: Build iOS IPA
+    runs-on: macos-latest
+    timeout-minutes: 90
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: PhysiqeAI/package-lock.json
+
+      - name: 🔧 Install dependencies
+        working-directory: ./PhysiqeAI
+        run: npm ci
+
+      - name: 🚀 Setup EAS CLI
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: 🏗️ Build iOS Production IPA
+        working-directory: ./PhysiqeAI
+        run: |
+          echo "Building iOS production IPA..."
+          eas build --platform ios \
+            --profile production \
+            --non-interactive
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+
+      - name: 📋 Build Complete
+        run: |
+          echo "## ✅ iOS Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Your IPA has been built and is available in EAS Build dashboard." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Go to [EAS Build Dashboard](https://expo.dev/accounts/nikunjtulsyan/projects/flex-aura/builds)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Download the IPA file" >> $GITHUB_STEP_SUMMARY
+          echo "3. Submit to App Store Connect manually or use \`eas submit\`" >> $GITHUB_STEP_SUMMARY
+

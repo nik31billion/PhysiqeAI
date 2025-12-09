@@ -16,9 +16,10 @@
       "supportsTablet": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "Flex Aura uses the camera to scan food items and analyze their nutritional content for accurate calorie tracking and meal planning."
+        "NSCameraUsageDescription": "Flex Aura uses the camera to scan food items and analyze their nutritional content for accurate calorie tracking and meal planning.",
+        "NSPhotoLibraryUsageDescription": "Flex Aura needs access to your photo library to let you select images for food scanning and progress tracking."
       },
-      "buildNumber": "7",
+      "buildNumber": "15",
       "entitlements": {
         "com.apple.developer.in-app-payments": [
           "merchant.com.applotictech.flexaura"
@@ -26,16 +27,18 @@
       },
       "associatedDomains": [
         "applinks:flexaura.app.link"
-      ]
+      ],
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
       "package": "com.applotictech.flexaura",
-      "versionCode": 118,
+      "versionCode": 126,
       "adaptiveIcon": {
         "foregroundImage": "./assets/mascot/flex_aura_new_logo_no_bg_2.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "googleServicesFile": "./google-services.json"
     },
     "notification": {
       "icon": "./assets/mascot/flex_aura_new_logo_no_bg_2.png",
@@ -58,6 +61,16 @@
         "@react-native-google-signin/google-signin",
         {
           "iosUrlScheme": "com.googleusercontent.apps.249953575983-3kf0p4urs0mijvclro29j59ec7t6n5g3"
+        }
+      ],
+      "expo-apple-authentication",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static",
+            "deploymentTarget": "15.1"
+          }
         }
       ]
     ],

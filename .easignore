@@ -1,0 +1,58 @@
+# Build artifacts (not needed - EAS will rebuild)
+android/app/build/
+android/build/
+android/.gradle/
+android/app/.cxx/
+*.apk
+*.aab
+
+# Documentation files
+*.md
+!README.md
+
+# Test files
+test-*.js
+test-*.ts
+
+# Deploy scripts
+deploy-*.sh
+
+# Database files (not needed for build)
+database/*.sql
+
+# Development/debug files
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# Debug keystore (EAS uses its own)
+android/app/debug.keystore
+
+# Expo dev files
+.expo/
+dist/
+web-build/
+
+# TypeScript build info
+*.tsbuildinfo
+
