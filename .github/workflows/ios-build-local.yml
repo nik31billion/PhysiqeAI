@@ -102,42 +102,78 @@ jobs:
             exit 1
           fi
           
-          # Write Python script to temp file to avoid YAML parsing issues
+          # Write Python script to temp file
           cat > /tmp/fix_podfile.py << 'PYEOF'
           import re
+          import sys
           
           with open('Podfile', 'r') as f:
-              content = f.read()
+              lines = f.readlines()
           
-          if 'CODE_SIGN_IDENTITY' in content:
+          # Check if already fixed
+          content = ''.join(lines)
+          if 'CODE_SIGN_IDENTITY' in content and 'CODE_SIGNING_REQUIRED' in content:
               print("Code signing fix already exists")
-              exit(0)
+              sys.exit(0)
           
-          code_fix = "  installer.pods_project.targets.each do |target|\n    target.build_configurations.each do |config|\n      config.build_settings['CODE_SIGN_IDENTITY'] = ''\n      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'\n      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'\n      config.build_settings['CODE_SIGN_STYLE'] = 'Manual'\n    end\n  end"
+          # Find post_install block
+          in_post_install = False
+          post_install_start = -1
+          indent_level = 0
+          end_count = 0
           
-          if 'post_install do |installer|' in content:
-              pattern = r'(post_install do \|installer\|.*?)(\nend)'
-              match = re.search(pattern, content, re.DOTALL)
-              if match:
-                  new_content = match.group(1) + '\n' + code_fix + match.group(2)
-                  content = content[:match.start()] + new_content + content[match.end():]
-                  print("Added to existing post_install")
-              else:
-                  content = content.rstrip() + '\n' + code_fix + '\nend\n'
-                  print("Added via fallback")
-          else:
-              content = content.rstrip() + '\n\npost_install do |installer|\n' + code_fix + '\nend\n'
-              print("Created new post_install")
+          for i, line in enumerate(lines):
+              if 'post_install do |installer|' in line:
+                  in_post_install = True
+                  post_install_start = i
+                  indent_level = len(line) - len(line.lstrip())
+                  continue
+              
+              if in_post_install:
+                  # Count 'end' statements to find the closing end of post_install
+                  stripped = line.strip()
+                  if stripped == 'end':
+                      end_count += 1
+                      # If we're back to the same indent level, this is the closing end
+                      current_indent = len(line) - len(line.lstrip())
+                      if current_indent == indent_level and end_count >= 1:
+                          # Insert code signing fix before this 'end'
+                          code_fix = ' ' * (indent_level + 2) + 'installer.pods_project.targets.each do |target|\n'
+                          code_fix += ' ' * (indent_level + 4) + 'target.build_configurations.each do |config|\n'
+                          code_fix += ' ' * (indent_level + 6) + "config.build_settings['CODE_SIGN_IDENTITY'] = ''\n"
+                          code_fix += ' ' * (indent_level + 6) + "config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'\n"
+                          code_fix += ' ' * (indent_level + 6) + "config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'\n"
+                          code_fix += ' ' * (indent_level + 6) + "config.build_settings['CODE_SIGN_STYLE'] = 'Manual'\n"
+                          code_fix += ' ' * (indent_level + 4) + 'end\n'
+                          code_fix += ' ' * (indent_level + 2) + 'end\n'
+                          lines.insert(i, code_fix)
+                          print("Inserted code signing fix into post_install block")
+                          break
+          
+          if not in_post_install:
+              # No post_install found, add one at the end
+              code_fix = '\npost_install do |installer|\n'
+              code_fix += '  installer.pods_project.targets.each do |target|\n'
+              code_fix += '    target.build_configurations.each do |config|\n'
+              code_fix += "      config.build_settings['CODE_SIGN_IDENTITY'] = ''\n"
+              code_fix += "      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'\n"
+              code_fix += "      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'\n"
+              code_fix += "      config.build_settings['CODE_SIGN_STYLE'] = 'Manual'\n"
+              code_fix += '    end\n'
+              code_fix += '  end\n'
+              code_fix += 'end\n'
+              lines.append(code_fix)
+              print("Created new post_install block")
           
           with open('Podfile', 'w') as f:
-              f.write(content)
-          print("Podfile updated")
+              f.writelines(lines)
+          print("Podfile updated successfully")
           PYEOF
           
           python3 /tmp/fix_podfile.py
           
-          echo "Verifying Podfile:"
-          grep -c "post_install" Podfile || echo "No post_install found"
+          echo "Verifying Podfile structure:"
+          grep -A 10 "post_install" Podfile | head -15
 
       - name: 📦 Install CocoaPods dependencies
         working-directory: ./ios
