@@ -102,47 +102,34 @@ jobs:
             exit 1
           fi
           
-          # Backup Podfile
-          cp Podfile Podfile.backup
+          # Use Ruby to properly modify the Podfile
+          ruby << 'RUBY_SCRIPT'
+          podfile_content = File.read('Podfile')
           
-          # Remove existing post_install hooks (there might be multiple)
-          sed -i.bak '/^post_install do/,/^end$/d' Podfile
-          
-          # Find the last 'end' before any target definitions and add our post_install there
-          # Or append at the end if no suitable location found
-          if grep -q "^end$" Podfile; then
-            # Insert before the last 'end' (which closes the main Podfile block)
-            sed -i.bak '$ i\
-          post_install do |installer|\
-            installer.pods_project.targets.each do |target|\
-              target.build_configurations.each do |config|\
-                config.build_settings["CODE_SIGN_IDENTITY"] = ""\
-                config.build_settings["CODE_SIGNING_REQUIRED"] = "NO"\
-                config.build_settings["CODE_SIGNING_ALLOWED"] = "NO"\
-                config.build_settings["CODE_SIGN_STYLE"] = "Manual"\
-              end\
-            end\
-          end
-' Podfile
+          # Check if post_install already exists
+          if podfile_content.include?('post_install do')
+            # Find the post_install block and add our code signing fix inside it
+            # Replace the existing post_install with one that includes code signing fix
+            podfile_content.gsub!(/post_install do \|installer\|.*?^end$/m) do |match|
+              # Check if code signing fix is already in there
+              if match.include?('CODE_SIGN_IDENTITY')
+                match  # Already has it, keep as is
+              else
+                # Add code signing fix before the last 'end'
+                match.sub(/^end$/, "    installer.pods_project.targets.each do |target|\n      target.build_configurations.each do |config|\n        config.build_settings['CODE_SIGN_IDENTITY'] = ''\n        config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'\n        config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'\n        config.build_settings['CODE_SIGN_STYLE'] = 'Manual'\n      end\n    end\n  end")
+              end
+            end
           else
-            # Append at the end
-            cat >> Podfile << 'PODFILE_END'
-post_install do |installer|
-  installer.pods_project.targets.each do |target|
-    target.build_configurations.each do |config|
-      config.build_settings['CODE_SIGN_IDENTITY'] = ''
-      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
-      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
-      config.build_settings['CODE_SIGN_STYLE'] = 'Manual'
-    end
-  end
-end
-PODFILE_END
-          fi
+            # No post_install exists, add one at the end
+            podfile_content += "\n\npost_install do |installer|\n  installer.pods_project.targets.each do |target|\n    target.build_configurations.each do |config|\n      config.build_settings['CODE_SIGN_IDENTITY'] = ''\n      config.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'\n      config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'\n      config.build_settings['CODE_SIGN_STYLE'] = 'Manual'\n    end\n  end\nend\n"
+          end
           
-          echo "✅ Podfile updated with code signing fix"
-          echo "Checking for duplicate post_install hooks:"
-          grep -c "post_install" Podfile || echo "No post_install found"
+          File.write('Podfile', podfile_content)
+          puts "✅ Podfile updated"
+          RUBY_SCRIPT
+          
+          echo "Verifying Podfile:"
+          grep -c "post_install" Podfile || echo "Warning: No post_install found"
 
       - name: 📦 Install CocoaPods dependencies
         working-directory: ./ios
