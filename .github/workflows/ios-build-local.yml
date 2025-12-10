@@ -433,13 +433,17 @@ jobs:
           # Try to export IPA
           # If export fails due to missing certificates, try extracting directly from archive
           echo "Attempting to export IPA..."
+          set -o pipefail
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \
             -exportPath "$EXPORT_PATH" \
             -exportOptionsPlist ./exportOptions.plist \
-            -allowProvisioningUpdates 2>&1 | tee /tmp/export.log || {
-            
-            echo "⚠️ Standard export failed. Trying alternative method..."
+            -allowProvisioningUpdates 2>&1 | tee /tmp/export.log
+          
+          EXPORT_EXIT_CODE=${PIPESTATUS[0]}
+          
+          if [ $EXPORT_EXIT_CODE -ne 0 ]; then
+            echo "⚠️ Standard export failed (exit code: $EXPORT_EXIT_CODE). Trying alternative method..."
             echo "=== Export Error Log ==="
             cat /tmp/export.log | grep -i "error\|certificate\|profile" | head -20
             
@@ -460,20 +464,26 @@ jobs:
                 zip -r "${APP_NAME%.app}.ipa" Payload/
                 IPA_FILE="$EXPORT_PATH/${APP_NAME%.app}.ipa"
                 if [ -f "$IPA_FILE" ]; then
-                  echo "✅ Successfully created IPA: $IPA_FILE"
+                  echo "✅ Successfully created IPA via extraction: $IPA_FILE"
                   echo "IPA_PATH=$IPA_FILE" >> $GITHUB_ENV
                   exit 0
+                else
+                  echo "❌ Failed to create IPA file"
                 fi
+              else
+                echo "❌ No .app found in $APP_PATH"
               fi
+            else
+              echo "❌ App path not found: $APP_PATH"
             fi
             
             echo "❌ All export methods failed"
             echo "=== Available Certificates ==="
             security find-identity -v -p codesigning || echo "None found"
             exit 1
-          }
+          fi
           
-          echo "IPA exported successfully"
+          echo "IPA exported successfully via xcodebuild"
           
           # Find the IPA file
           IPA_FILE=$(find "$EXPORT_PATH" -name "*.ipa" | head -1)
