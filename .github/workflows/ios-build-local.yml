@@ -320,28 +320,29 @@ jobs:
           security default-keychain -s build.keychain || true
           security unlock-keychain -p "" build.keychain || true
           
+          # Set keychain to not require password for codesigning
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain || true
+          
           # Install EAS CLI
           npm install -g eas-cli
           
-          # Pull iOS credentials from EAS (doesn't use build credits, just downloads them)
-          echo "Pulling iOS credentials from EAS..."
-          echo "This downloads certificates and provisioning profiles without using build credits"
-          
-          # Use EAS credentials API to get credentials
-          eas credentials --platform ios --non-interactive --skip-credentials-check || {
-            echo "⚠️ Note: If credentials don't exist in EAS, they need to be created first"
-            echo "Run locally: eas credentials --platform ios"
-            echo "Then commit and push, and this will work"
+          # Use EAS to sync credentials to local keychain
+          # This will download and import certificates/profiles from EAS
+          echo "Syncing EAS credentials to local keychain..."
+          eas credentials --platform ios --non-interactive 2>&1 | tee /tmp/eas-credentials.log || {
+            echo "⚠️ EAS credentials sync had issues, checking log..."
+            cat /tmp/eas-credentials.log
           }
           
-          # List available certificates
-          echo "=== Available Signing Certificates ==="
+          # Verify credentials were imported
+          echo "=== Verifying Imported Credentials ==="
+          echo "Available signing identities:"
           security find-identity -v -p codesigning | grep -i "distribution\|apple" || echo "No distribution certificates found"
           
-          # List provisioning profiles
-          echo "=== Available Provisioning Profiles ==="
+          echo ""
+          echo "Provisioning profiles directory:"
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles/
-          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ 2>/dev/null | head -5 || echo "No provisioning profiles directory found"
+          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ 2>/dev/null | head -10 || echo "No provisioning profiles found"
           
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -377,7 +378,22 @@ jobs:
           
           EXPORT_PATH="$(pwd)/build"
           
-          # Export IPA with authentication
+          # Authenticate with Apple Developer account using app-specific password
+          # This allows Xcode to download provisioning profiles automatically
+          echo "Authenticating with Apple Developer..."
+          xcrun altool --store-password-in-keychain-item "AC_PASSWORD" \
+            -u "${{ secrets.APPLE_ID }}" \
+            -p "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" || {
+            echo "⚠️ altool authentication failed, trying notarytool..."
+            # Try newer notarytool (for newer Xcode versions)
+            xcrun notarytool store-credentials "AC_PASSWORD" \
+              --apple-id "${{ secrets.APPLE_ID }}" \
+              --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+              --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" || true
+          }
+          
+          # Export IPA - Xcode will use stored credentials to download profiles
+          echo "Exporting IPA..."
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \
             -exportPath "$EXPORT_PATH" \
