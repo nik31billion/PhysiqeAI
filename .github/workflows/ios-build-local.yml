@@ -79,7 +79,7 @@ jobs:
           <plist version="1.0">
           <dict>
               <key>method</key>
-              <string>app-store</string>
+              <string>app-store-connect</string>
               <key>teamID</key>
               <string>${{ secrets.APPLE_TEAM_ID }}</string>
               <key>uploadBitcode</key>
@@ -90,13 +90,6 @@ jobs:
               <false/>
               <key>signingStyle</key>
               <string>automatic</string>
-              <key>signingCertificate</key>
-              <string>Apple Distribution</string>
-              <key>provisioningProfiles</key>
-              <dict>
-                  <key>com.applotictech.flexaura</key>
-                  <string></string>
-              </dict>
           </dict>
           </plist>
           EOF
@@ -317,6 +310,45 @@ jobs:
             exit 1
           fi
 
+      - name: 🔐 Setup Certificates and Profiles for Export
+        run: |
+          echo "Setting up certificates and provisioning profiles for export..."
+          
+          # Create keychain for storing credentials
+          security create-keychain -p "" build.keychain || true
+          security set-keychain-settings -t 3600 -u build.keychain || true
+          security default-keychain -s build.keychain || true
+          security unlock-keychain -p "" build.keychain || true
+          
+          # Install EAS CLI
+          npm install -g eas-cli
+          
+          # Pull iOS credentials from EAS (doesn't use build credits, just downloads them)
+          echo "Pulling iOS credentials from EAS..."
+          echo "This downloads certificates and provisioning profiles without using build credits"
+          
+          # Use EAS credentials API to get credentials
+          eas credentials --platform ios --non-interactive --skip-credentials-check || {
+            echo "⚠️ Note: If credentials don't exist in EAS, they need to be created first"
+            echo "Run locally: eas credentials --platform ios"
+            echo "Then commit and push, and this will work"
+          }
+          
+          # List available certificates
+          echo "=== Available Signing Certificates ==="
+          security find-identity -v -p codesigning | grep -i "distribution\|apple" || echo "No distribution certificates found"
+          
+          # List provisioning profiles
+          echo "=== Available Provisioning Profiles ==="
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles/
+          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ 2>/dev/null | head -5 || echo "No provisioning profiles directory found"
+          
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
       - name: 📦 Export IPA
         working-directory: ./ios
         run: |
@@ -344,6 +376,8 @@ jobs:
           echo "✅ Archive found, proceeding with export..."
           
           EXPORT_PATH="$(pwd)/build"
+          
+          # Export IPA with authentication
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \
             -exportPath "$EXPORT_PATH" \
