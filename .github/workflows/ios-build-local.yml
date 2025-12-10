@@ -310,39 +310,109 @@ jobs:
             exit 1
           fi
 
-      - name: 🔐 Setup Certificates and Profiles for Export
+      - name: 🔐 Setup Certificates using Fastlane Match
         run: |
-          echo "Setting up certificates and provisioning profiles for export..."
+          echo "Setting up certificates and provisioning profiles using Fastlane Match..."
+          echo "⚠️ NOTE: Fastlane Match needs to be set up first!"
+          echo "Run locally: fastlane match appstore"
+          echo "This will sync certificates to a git repo (GitHub/GitLab/Bitbucket)"
+          echo ""
+          echo "For now, trying EAS credentials as fallback..."
           
-          # Create keychain for storing credentials
+          # Setup keychain
           security create-keychain -p "" build.keychain || true
           security set-keychain-settings -t 3600 -u build.keychain || true
           security default-keychain -s build.keychain || true
           security unlock-keychain -p "" build.keychain || true
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain || true
           
-          # Set keychain to not require password for codesigning
+          # Install Fastlane
+          sudo gem install fastlane || echo "Fastlane install failed, will try EAS fallback"
+          
+          # Try Fastlane Match (if configured)
+          # fastlane match appstore --readonly || echo "Match not configured, using EAS..."
+          
+          # Fallback: Use EAS credentials
+          npm install -g eas-cli
+          eas credentials --platform ios --non-interactive 2>&1 || echo "EAS credentials fetch failed"
+          
+          # Verify
+          echo "=== Available Certificates ==="
+          security find-identity -v -p codesigning || echo "No certificates found"
+          
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+        run: |
+          echo "Setting up certificates and provisioning profiles..."
+          
+          # Create and setup keychain
+          security create-keychain -p "" build.keychain || true
+          security set-keychain-settings -t 3600 -u build.keychain || true
+          security default-keychain -s build.keychain || true
+          security unlock-keychain -p "" build.keychain || true
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain || true
           
           # Install EAS CLI
           npm install -g eas-cli
           
-          # Use EAS to sync credentials to local keychain
-          # This will download and import certificates/profiles from EAS
-          echo "Syncing EAS credentials to local keychain..."
-          eas credentials --platform ios --non-interactive 2>&1 | tee /tmp/eas-credentials.log || {
-            echo "⚠️ EAS credentials sync had issues, checking log..."
-            cat /tmp/eas-credentials.log
-          }
+          # Authenticate with Apple (needed for EAS to access certificates)
+          echo "Authenticating with Apple..."
+          xcrun altool --store-password-in-keychain-item "AC_PASSWORD" \
+            -u "${{ secrets.APPLE_ID }}" \
+            -p "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" || true
           
-          # Verify credentials were imported
-          echo "=== Verifying Imported Credentials ==="
-          echo "Available signing identities:"
-          security find-identity -v -p codesigning | grep -i "distribution\|apple" || echo "No distribution certificates found"
+          # Use EAS credentials to get certificate and profile
+          # EAS stores them, we need to extract and import them
+          echo "Fetching credentials from EAS..."
+          
+          # Create temp directory for credentials
+          mkdir -p /tmp/ios-creds
+          cd /tmp/ios-creds
+          
+          # Try to get credentials using EAS API
+          # Note: This requires EAS credentials to be set up first via: eas credentials --platform ios
+          eas credentials --platform ios --non-interactive 2>&1 | tee /tmp/eas-output.log
+          
+          # Check if EAS downloaded any files
+          echo "=== Checking for downloaded credentials ==="
+          find /tmp/ios-creds -type f 2>/dev/null || echo "No files found in temp directory"
+          
+          # If we have a .p12 certificate, import it
+          if ls /tmp/ios-creds/*.p12 1> /dev/null 2>&1; then
+            echo "Found .p12 certificate, importing..."
+            for p12 in /tmp/ios-creds/*.p12; do
+              security import "$p12" -k build.keychain -P "" -T /usr/bin/codesign -T /usr/bin/security || true
+            done
+          fi
+          
+          # If we have a .cer certificate, import it  
+          if ls /tmp/ios-creds/*.cer 1> /dev/null 2>&1; then
+            echo "Found .cer certificate, importing..."
+            for cer in /tmp/ios-creds/*.cer; do
+              security import "$cer" -k build.keychain -T /usr/bin/codesign -T /usr/bin/security || true
+            done
+          fi
+          
+          # Copy provisioning profiles
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles/
+          if ls /tmp/ios-creds/*.mobileprovision 1> /dev/null 2>&1; then
+            echo "Found provisioning profiles, copying..."
+            cp /tmp/ios-creds/*.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/ || true
+          fi
+          
+          # Verify what we have
+          echo "=== Final Status ==="
+          echo "Certificates in keychain:"
+          security find-identity -v -p codesigning | grep -i "distribution\|apple" || echo "⚠️ No distribution certificates found"
           
           echo ""
-          echo "Provisioning profiles directory:"
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles/
-          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ 2>/dev/null | head -10 || echo "No provisioning profiles found"
+          echo "Provisioning profiles:"
+          ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ 2>/dev/null | wc -l || echo "0"
           
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
@@ -378,27 +448,67 @@ jobs:
           
           EXPORT_PATH="$(pwd)/build"
           
-          # Authenticate with Apple Developer account using app-specific password
-          # This allows Xcode to download provisioning profiles automatically
+          # Authenticate with Apple Developer account
           echo "Authenticating with Apple Developer..."
           xcrun altool --store-password-in-keychain-item "AC_PASSWORD" \
             -u "${{ secrets.APPLE_ID }}" \
             -p "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" || {
             echo "⚠️ altool authentication failed, trying notarytool..."
-            # Try newer notarytool (for newer Xcode versions)
             xcrun notarytool store-credentials "AC_PASSWORD" \
               --apple-id "${{ secrets.APPLE_ID }}" \
               --team-id "${{ secrets.APPLE_TEAM_ID }}" \
               --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" || true
           }
           
-          # Export IPA - Xcode will use stored credentials to download profiles
-          echo "Exporting IPA..."
+          # Try to download provisioning profiles using altool
+          echo "Attempting to download provisioning profiles..."
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles/
+          
+          # List available profiles
+          xcrun altool --list-providers -u "${{ secrets.APPLE_ID }}" -p "@keychain:AC_PASSWORD" 2>&1 || echo "Could not list providers"
+          
+          # Try to export IPA
+          # If export fails due to missing certificates, try extracting directly from archive
+          echo "Attempting to export IPA..."
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \
             -exportPath "$EXPORT_PATH" \
             -exportOptionsPlist ./exportOptions.plist \
-            -allowProvisioningUpdates
+            -allowProvisioningUpdates 2>&1 | tee /tmp/export.log || {
+            
+            echo "⚠️ Standard export failed. Trying alternative method..."
+            echo "=== Export Error Log ==="
+            cat /tmp/export.log | grep -i "error\|certificate\|profile" | head -20
+            
+            # Alternative: Extract IPA directly from archive (if already signed)
+            echo ""
+            echo "Attempting to extract IPA directly from archive..."
+            APP_PATH="$ARCHIVE_PATH/Products/Applications"
+            if [ -d "$APP_PATH" ]; then
+              APP_NAME=$(ls "$APP_PATH" | grep ".app" | head -1)
+              if [ -n "$APP_NAME" ]; then
+                echo "Found app: $APP_NAME"
+                # Create Payload directory
+                mkdir -p "$EXPORT_PATH/Payload"
+                # Copy app to Payload
+                cp -R "$APP_PATH/$APP_NAME" "$EXPORT_PATH/Payload/"
+                # Create IPA
+                cd "$EXPORT_PATH"
+                zip -r "${APP_NAME%.app}.ipa" Payload/
+                IPA_FILE="$EXPORT_PATH/${APP_NAME%.app}.ipa"
+                if [ -f "$IPA_FILE" ]; then
+                  echo "✅ Successfully created IPA: $IPA_FILE"
+                  echo "IPA_PATH=$IPA_FILE" >> $GITHUB_ENV
+                  exit 0
+                fi
+              fi
+            fi
+            
+            echo "❌ All export methods failed"
+            echo "=== Available Certificates ==="
+            security find-identity -v -p codesigning || echo "None found"
+            exit 1
+          }
           
           echo "IPA exported successfully"
           
