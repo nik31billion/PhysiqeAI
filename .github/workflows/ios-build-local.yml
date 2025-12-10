@@ -262,7 +262,7 @@ jobs:
           echo "Archive will be created at: $ARCHIVE_PATH"
           
           # Build for iOS device (not simulator)
-          # Remove xcpretty to see actual errors
+          # Use automatic signing - Xcode will handle certificate selection
           set -o pipefail
           xcodebuild clean archive \
             -workspace "$WORKSPACE" \
@@ -272,17 +272,20 @@ jobs:
             -archivePath "$ARCHIVE_PATH" \
             -allowProvisioningUpdates \
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
-            CODE_SIGN_STYLE="Automatic" \
-            CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGNING_ALLOWED=YES \
             2>&1 | tee /tmp/xcodebuild.log
           
           BUILD_EXIT_CODE=${PIPESTATUS[0]}
           if [ $BUILD_EXIT_CODE -ne 0 ]; then
             echo "❌ Archive build failed with exit code: $BUILD_EXIT_CODE"
-            echo "=== Searching for actual errors (not warnings) ==="
-            grep -i "error\|failed\|fatal" /tmp/xcodebuild.log | head -20 || echo "No clear errors found, showing last 30 lines:"
-            tail -30 /tmp/xcodebuild.log
+            echo "=== Full error output ==="
+            echo "Last 100 lines of build log:"
+            tail -100 /tmp/xcodebuild.log
+            echo ""
+            echo "=== Searching for errors ==="
+            grep -i "error\|failed\|fatal" /tmp/xcodebuild.log | tail -50
+            echo ""
+            echo "=== Build summary ==="
+            grep -i "archive\|succeeded\|failed" /tmp/xcodebuild.log | tail -10
             exit $BUILD_EXIT_CODE
           fi
           
