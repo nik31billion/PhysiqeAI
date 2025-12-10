@@ -154,9 +154,21 @@ jobs:
             # Find the line with react_native_post_install (always present in expo prebuild)
             REACT_NATIVE_LINE=$(grep -n "react_native_post_install" Podfile | head -1 | cut -d: -f1)
             if [ -n "$REACT_NATIVE_LINE" ]; then
-              echo "Found react_native_post_install at line $REACT_NATIVE_LINE, inserting after it..."
-              # Insert temp file content after react_native_post_install line
-              sed -i.bak "${REACT_NATIVE_LINE}r /tmp/code_signing_insert.txt" Podfile
+              echo "Found react_native_post_install at line $REACT_NATIVE_LINE"
+              # Find the closing ')' of the react_native_post_install function call
+              # Use awk to find first line after react_native_post_install that ends with just ')'
+              INSERT_LINE=$(awk -v start="$REACT_NATIVE_LINE" 'NR > start && /^[[:space:]]*\)[[:space:]]*$/ {print NR; exit}' Podfile)
+              
+              if [ -z "$INSERT_LINE" ]; then
+                # Fallback: if no closing ) found, insert 5 lines after react_native_post_install
+                # (react_native_post_install usually spans 3-4 lines)
+                INSERT_LINE=$((REACT_NATIVE_LINE + 5))
+                echo "WARNING: Could not find closing ')' for react_native_post_install, inserting at line $INSERT_LINE"
+              else
+                echo "Found closing ')' at line $INSERT_LINE, inserting after it..."
+              fi
+              # Insert temp file content after the closing parenthesis
+              sed -i.bak "${INSERT_LINE}r /tmp/code_signing_insert.txt" Podfile
               rm -f /tmp/code_signing_insert.txt
             else
               echo "WARNING: react_native_post_install not found, inserting before last 'end'..."
