@@ -310,43 +310,12 @@ jobs:
             exit 1
           fi
 
-      - name: 🔐 Setup Certificates using Fastlane Match
-        run: |
-          echo "Setting up certificates and provisioning profiles using Fastlane Match..."
-          echo "⚠️ NOTE: Fastlane Match needs to be set up first!"
-          echo "Run locally: fastlane match appstore"
-          echo "This will sync certificates to a git repo (GitHub/GitLab/Bitbucket)"
-          echo ""
-          echo "For now, trying EAS credentials as fallback..."
-          
-          # Setup keychain
-          security create-keychain -p "" build.keychain || true
-          security set-keychain-settings -t 3600 -u build.keychain || true
-          security default-keychain -s build.keychain || true
-          security unlock-keychain -p "" build.keychain || true
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain || true
-          
-          # Install Fastlane
-          sudo gem install fastlane || echo "Fastlane install failed, will try EAS fallback"
-          
-          # Try Fastlane Match (if configured)
-          # fastlane match appstore --readonly || echo "Match not configured, using EAS..."
-          
-          # Fallback: Use EAS credentials
-          npm install -g eas-cli
-          eas credentials --platform ios --non-interactive 2>&1 || echo "EAS credentials fetch failed"
-          
-          # Verify
-          echo "=== Available Certificates ==="
-          security find-identity -v -p codesigning || echo "No certificates found"
-          
+      - name: 🔐 Setup Certificates and Profiles
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
         run: |
           echo "Setting up certificates and provisioning profiles..."
           
@@ -413,12 +382,6 @@ jobs:
           echo ""
           echo "Provisioning profiles:"
           ls -la ~/Library/MobileDevice/Provisioning\ Profiles/ 2>/dev/null | wc -l || echo "0"
-          
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: 📦 Export IPA
         working-directory: ./ios
