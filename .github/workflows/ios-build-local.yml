@@ -55,10 +55,20 @@ jobs:
       - name: 🔐 Setup Code Signing
         run: |
           echo "Setting up code signing..."
-          echo "Note: Code signing will use automatic signing with your Apple Team ID"
-          echo "Make sure you've configured iOS credentials with: eas credentials --platform ios"
+          echo "Using automatic signing - Xcode will manage certificates and profiles"
+          echo "Team ID: ${{ secrets.APPLE_TEAM_ID }}"
+          
+          # Create keychain for code signing (if needed)
+          security create-keychain -p "" build.keychain || true
+          security set-keychain-settings -t 3600 -u build.keychain || true
+          security default-keychain -s build.keychain || true
+          
+          # Unlock keychain
+          security unlock-keychain -p "" build.keychain || true
+          
+          echo "Keychain setup complete"
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: 📝 Create Export Options
         run: |
@@ -261,6 +271,11 @@ jobs:
           ARCHIVE_PATH="$(pwd)/build/flex-aura.xcarchive"
           echo "Archive will be created at: $ARCHIVE_PATH"
           
+          # Check available signing identities
+          echo "=== Available Signing Identities ==="
+          security find-identity -v -p codesigning || echo "No identities found"
+          echo ""
+          
           # Build for iOS device (not simulator)
           # Use automatic signing - Xcode will handle certificate selection
           set -o pipefail
@@ -272,6 +287,8 @@ jobs:
             -archivePath "$ARCHIVE_PATH" \
             -allowProvisioningUpdates \
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_STYLE="Automatic" \
             2>&1 | tee /tmp/xcodebuild.log
           
           BUILD_EXIT_CODE=${PIPESTATUS[0]}
